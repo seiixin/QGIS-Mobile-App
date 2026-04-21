@@ -1,5 +1,6 @@
-import React from 'react';
-import { Text, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Text, View, StyleSheet, Animated } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -19,25 +20,46 @@ import SettingsScreen from '../screens/main/SettingsScreen';
 
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
+import { useAuth } from '../context/AuthContext';
 
 const RootStack = createStackNavigator();
 const AuthStack = createStackNavigator();
 const MainStack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// ─── Tab icon ─────────────────────────────────────────────────────────────────
-const TabIcon = ({ emoji, label, focused }) => (
-  <View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 2 }}>
-    <Text style={{ fontSize: 20 }}>{emoji}</Text>
-    <Text style={{
-      fontSize: 10, marginTop: 2,
-      color: focused ? colors.tabActive : colors.tabInactive,
-      fontWeight: focused ? '700' : '400',
-    }}>
-      {label}
-    </Text>
-  </View>
-);
+const NAV_COLOR = '#1B2A4A';
+
+// ─── Icon map per tab ─────────────────────────────────────────────────────────
+const TAB_ICONS = {
+  Impact:     { active: 'bar-chart',          inactive: 'bar-chart-outline'       },
+  Info:       { active: 'information-circle', inactive: 'information-circle-outline' },
+  Map:        { active: 'map',                inactive: 'map-outline'             },
+  OfflineMap: { active: 'download',           inactive: 'download-outline'        },
+  Emergency:  { active: 'call',               inactive: 'call-outline'            },
+};
+
+const TabIcon = ({ name, label, focused }) => {
+  const scaleAnim = useRef(new Animated.Value(focused ? 1 : 0.88)).current;
+
+  useEffect(() => {
+    Animated.spring(scaleAnim, {
+      toValue: focused ? 1 : 0.88,
+      useNativeDriver: true,
+      tension: 80, friction: 8,
+    }).start();
+  }, [focused]);
+
+  const iconName = focused ? TAB_ICONS[name]?.active : TAB_ICONS[name]?.inactive;
+
+  return (
+    <Animated.View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 2, transform: [{ scale: scaleAnim }] }}>
+      <View style={[styles.tabIconWrap, focused && styles.tabIconWrapActive]}>
+        <Ionicons name={iconName} size={22} color={focused ? NAV_COLOR : colors.tabInactive} />
+      </View>
+      <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>{label}</Text>
+    </Animated.View>
+  );
+};
 
 // ─── Bottom tabs (the 5 main content tabs) ────────────────────────────────────
 function MainTabs() {
@@ -61,15 +83,15 @@ function MainTabs() {
       }}
     >
       <Tab.Screen name="Impact" component={ImpactScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="📊" label="Impact" focused={focused} /> }} />
+        options={{ tabBarIcon: ({ focused }) => <TabIcon name="Impact" label="Impact" focused={focused} /> }} />
       <Tab.Screen name="Info" component={InfoScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="ℹ️" label="Info" focused={focused} /> }} />
+        options={{ tabBarIcon: ({ focused }) => <TabIcon name="Info" label="Info" focused={focused} /> }} />
       <Tab.Screen name="Map" component={MapScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="🗺️" label="Map" focused={focused} /> }} />
+        options={{ tabBarIcon: ({ focused }) => <TabIcon name="Map" label="Map" focused={focused} /> }} />
       <Tab.Screen name="OfflineMap" component={OfflineMapScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="📥" label="Offlin" focused={focused} /> }} />
+        options={{ tabBarIcon: ({ focused }) => <TabIcon name="OfflineMap" label="Offline" focused={focused} /> }} />
       <Tab.Screen name="Emergency" component={EmergencyScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="🚨" label="Emergency" focused={focused} /> }} />
+        options={{ tabBarIcon: ({ focused }) => <TabIcon name="Emergency" label="Emergency" focused={focused} /> }} />
     </Tab.Navigator>
   );
 }
@@ -98,13 +120,25 @@ function AuthNavigator() {
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 export default function AppNavigator() {
+  const { isAuthenticated } = useAuth();
+
   return (
     <NavigationContainer>
       <RootStack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Onboarding">
         <RootStack.Screen name="Onboarding" component={OnboardingScreen} />
         <RootStack.Screen name="Auth" component={AuthNavigator} />
-        <RootStack.Screen name="Main" component={MainNavigator} />
+        {isAuthenticated ? <RootStack.Screen name="Main" component={MainNavigator} /> : null}
       </RootStack.Navigator>
     </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  tabIconWrap: {
+    width: 36, height: 28, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  tabIconWrapActive: { backgroundColor: `${NAV_COLOR}15` },
+  tabLabel: { fontSize: 10, marginTop: 2, color: colors.tabInactive },
+  tabLabelActive: { color: NAV_COLOR, fontWeight: '700' },
+});

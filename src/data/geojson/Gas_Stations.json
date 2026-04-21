@@ -1,0 +1,9 @@
+{
+"type": "FeatureCollection",
+"name": "gasstations",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "id": 1 }, "geometry": { "type": "Point", "coordinates": [ 120.742399999307793, 14.943829068113919 ] } },
+{ "type": "Feature", "properties": { "id": 2 }, "geometry": { "type": "Point", "coordinates": [ 120.757977064813886, 14.946046920727783 ] } }
+]
+}

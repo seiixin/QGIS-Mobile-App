@@ -1,148 +1,253 @@
-import React, { useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, StatusBar, TextInput,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  StatusBar, TextInput, ActivityIndicator, Linking, Alert, Animated,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import AppLayout from '../../components/layout/AppLayout';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
+import { useAuth } from '../../context/AuthContext';
+import { apiRequest } from '../../lib/apiClient';
 
-const hotlines = [
-  { name: 'NDRRMC', number: '(02) 8911-1406', icon: '🏛️' },
-  { name: 'BFP (Fire)', number: '160', icon: '🚒' },
-  { name: 'PNP (Police)', number: '117', icon: '👮' },
-  { name: 'Red Cross', number: '143', icon: '🏥' },
-  { name: 'PHIVOLCS', number: '(02) 8426-1468', icon: '🌋' },
-  { name: 'Apalit MDRRMO', number: '(045) 436-0001', icon: '🏠' },
-];
+const NAV_COLOR = '#1B2A4A';
 
-const personalContacts = [
-  { name: 'Maria Santos', phone: '+63 912 345 6789', relationship: 'Mother' },
-  { name: 'Juan Dela Cruz', phone: '+63 917 654 3210', relationship: 'Father' },
-];
+function callNumber(number) {
+  const cleaned = number.replace(/[\s\-().]/g, '');
+  const url = `tel:${cleaned}`;
+  Linking.canOpenURL(url)
+    .then(s => s ? Linking.openURL(url) : Alert.alert('Cannot place call', `Dial ${number} manually.`))
+    .catch(() => Alert.alert('Cannot place call', `Dial ${number} manually.`));
+}
+
+// ── Animated sliding tab ──────────────────────────────────────────────────────
+function TabBar({ activeTab, onSwitch }) {
+  const anim = useRef(new Animated.Value(activeTab === 'hotlines' ? 0 : 1)).current;
+
+  const switchTo = (tab) => {
+    Animated.spring(anim, { toValue: tab === 'hotlines' ? 0 : 1, useNativeDriver: false, tension: 60, friction: 10 }).start();
+    onSwitch(tab);
+  };
+
+  const indicatorLeft = anim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '50%'] });
+
+  return (
+    <View style={styles.tabContainer}>
+      <Animated.View style={[styles.tabIndicator, { left: indicatorLeft }]} />
+      <TouchableOpacity style={styles.tabBtn} onPress={() => switchTo('hotlines')} activeOpacity={0.8}>
+        <Text style={[styles.tabBtnText, activeTab === 'hotlines' && styles.tabBtnTextActive]}>
+          ☎  Hotlines
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.tabBtn} onPress={() => switchTo('contacts')} activeOpacity={0.8}>
+        <Text style={[styles.tabBtnText, activeTab === 'contacts' && styles.tabBtnTextActive]}>
+          ✦  My Contacts
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ── Animated card entrance ────────────────────────────────────────────────────
+function AnimatedCard({ children, delay = 0, style }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    Animated.timing(anim, { toValue: 1, duration: 280, delay, useNativeDriver: true }).start();
+  }, []);
+  return (
+    <Animated.View style={[style, {
+      opacity: anim,
+      transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }],
+    }]}>
+      {children}
+    </Animated.View>
+  );
+}
 
 export default function EmergencyScreen({ navigation }) {
-  const [activeTab, setActiveTab] = useState('hotlines');
-  const [contacts, setContacts] = useState(personalContacts);
+  const { token } = useAuth();
+  const [activeTab, setActiveTab]     = useState('hotlines');
+  const [hotlines, setHotlines]       = useState([]);
+  const [contacts, setContacts]       = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newPhone, setNewPhone] = useState('');
+  const [newName, setNewName]         = useState('');
+  const [newPhone, setNewPhone]       = useState('');
   const [newRelation, setNewRelation] = useState('');
+  const [loading, setLoading]         = useState(true);
+  const [saving, setSaving]           = useState(false);
+  const [error, setError]             = useState('');
+  const contentFade                   = useRef(new Animated.Value(1)).current;
 
-  const addContact = () => {
-    if (newName && newPhone) {
-      setContacts([...contacts, { name: newName, phone: newPhone, relationship: newRelation }]);
-      setNewName(''); setNewPhone(''); setNewRelation('');
-      setShowAddForm(false);
-    }
+  const loadContacts = useCallback(async () => {
+    try {
+      setLoading(true); setError('');
+      const [hotlineData, contactData] = await Promise.all([
+        apiRequest('/emergency/hotlines', { token }).catch(e => e.status === 404 ? [] : Promise.reject(e)),
+        apiRequest('/emergency/contacts', { token }),
+      ]);
+      setHotlines(hotlineData);
+      setContacts(contactData);
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }, [token]);
+
+  useFocusEffect(useCallback(() => { loadContacts(); }, [loadContacts]));
+
+  const switchTab = (tab) => {
+    Animated.timing(contentFade, { toValue: 0, duration: 100, useNativeDriver: true }).start(() => {
+      setActiveTab(tab);
+      Animated.timing(contentFade, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+    });
+  };
+
+  const addContact = async () => {
+    if (!newName.trim() || !newPhone.trim()) { setError('Name and phone number are required.'); return; }
+    try {
+      setSaving(true); setError('');
+      const saved = await apiRequest('/emergency/contacts', {
+        method: 'POST', token,
+        body: { name: newName.trim(), phone: newPhone.trim(), relationship: newRelation.trim() },
+      });
+      setContacts(c => [...c, saved.data ?? saved]);
+      setNewName(''); setNewPhone(''); setNewRelation(''); setShowAddForm(false);
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const removeContact = (id) => {
+    Alert.alert('Remove contact', 'Are you sure?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: async () => {
+        try {
+          await apiRequest(`/emergency/contacts/${id}`, { method: 'DELETE', token });
+          setContacts(c => c.filter(i => i.id !== id));
+        } catch (e) { setError(e.message); }
+      }},
+    ]);
   };
 
   return (
     <AppLayout navigation={navigation}>
-      <StatusBar barStyle="light-content" backgroundColor="#1B2A4A" />
-      {/* Tab row */}
-      <View style={styles.tabRow}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'hotlines' && styles.tabActive]}
-          onPress={() => setActiveTab('hotlines')}
-        >
-          <Text style={[styles.tabText, activeTab === 'hotlines' && styles.tabTextActive]}>📞 Hotlines</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'contacts' && styles.tabActive]}
-          onPress={() => setActiveTab('contacts')}
-        >
-          <Text style={[styles.tabText, activeTab === 'contacts' && styles.tabTextActive]}>👤 My Contacts</Text>
-        </TouchableOpacity>
+      <StatusBar barStyle="light-content" backgroundColor={NAV_COLOR} />
+
+      {/* Animated sliding tab */}
+      <View style={styles.tabWrapper}>
+        <TabBar activeTab={activeTab} onSwitch={switchTab} />
       </View>
 
-      <ScrollView style={styles.bg} contentContainerStyle={styles.scroll}>
-        {activeTab === 'hotlines' ? (
-          <>
-            <Text style={styles.sectionNote}>Official emergency hotlines for Pampanga and national agencies.</Text>
-            {hotlines.map((item, i) => (
-              <View key={i} style={styles.hotlineCard}>
-                <Text style={styles.hotlineIcon}>{item.icon}</Text>
-                <View style={styles.hotlineInfo}>
-                  <Text style={styles.hotlineName}>{item.name}</Text>
-                  <Text style={styles.hotlineNumber}>{item.number}</Text>
-                </View>
-                <TouchableOpacity style={styles.callBtn}><Text style={styles.callBtnText}>Call</Text></TouchableOpacity>
-              </View>
-            ))}
-          </>
-        ) : (
-          <>
-            <TouchableOpacity style={styles.addBtn} onPress={() => setShowAddForm(!showAddForm)}>
-              <Text style={styles.addBtnText}>+ Add Contact</Text>
-            </TouchableOpacity>
-            {showAddForm && (
-              <View style={styles.addForm}>
-                <TextInput style={styles.formInput} placeholder="Full Name" placeholderTextColor={colors.textLight} value={newName} onChangeText={setNewName} />
-                <TextInput style={styles.formInput} placeholder="Phone Number" placeholderTextColor={colors.textLight} value={newPhone} onChangeText={setNewPhone} keyboardType="phone-pad" />
-                <TextInput style={styles.formInput} placeholder="Relationship (optional)" placeholderTextColor={colors.textLight} value={newRelation} onChangeText={setNewRelation} />
-                <TouchableOpacity style={styles.saveBtn} onPress={addContact}>
-                  <Text style={styles.saveBtnText}>Save Contact</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-            {contacts.map((item, i) => (
-              <View key={i} style={styles.contactCard}>
-                <View style={styles.contactAvatar}>
-                  <Text style={styles.contactAvatarText}>{item.name.charAt(0)}</Text>
-                </View>
-                <View style={styles.contactInfo}>
-                  <Text style={styles.contactName}>{item.name}</Text>
-                  <Text style={styles.contactPhone}>{item.phone}</Text>
-                  {item.relationship ? <Text style={styles.contactRelation}>{item.relationship}</Text> : null}
-                </View>
-                <TouchableOpacity style={styles.callBtn}><Text style={styles.callBtnText}>Call</Text></TouchableOpacity>
-              </View>
-            ))}
-          </>
-        )}
-      </ScrollView>
+      <Animated.View style={{ flex: 1, opacity: contentFade }}>
+        <ScrollView style={styles.bg} contentContainerStyle={styles.scroll}>
+          {loading && <ActivityIndicator color={colors.btnPrimary} style={styles.loader} />}
+          {!loading && error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+          {activeTab === 'hotlines' ? (
+            <>
+              <Text style={styles.sectionNote}>Official emergency hotlines for Pampanga and national agencies.</Text>
+              {!loading && hotlines.length === 0 && <Text style={styles.emptyText}>No official hotlines available yet.</Text>}
+              {hotlines.map((item, i) => (
+                <AnimatedCard key={item.id} delay={i * 60} style={styles.hotlineCard}>
+                  <View style={styles.hotlineIconBox}>
+                    <Text style={styles.hotlineEmoji}>☎</Text>
+                  </View>
+                  <View style={styles.hotlineInfo}>
+                    <Text style={styles.hotlineName}>{item.agency_name}</Text>
+                    <Text style={styles.hotlineNumber}>{item.phone_number}</Text>
+                    {item.description ? <Text style={styles.hotlineDesc}>{item.description}</Text> : null}
+                  </View>
+                  <TouchableOpacity style={styles.callBtn} onPress={() => callNumber(item.phone_number)}>
+                    <Text style={styles.callBtnText}>Call</Text>
+                  </TouchableOpacity>
+                </AnimatedCard>
+              ))}
+            </>
+          ) : (
+            <>
+              <TouchableOpacity style={styles.addBtn} onPress={() => setShowAddForm(v => !v)}>
+                <Text style={styles.addBtnText}>{showAddForm ? '✕  Cancel' : '+  Add Contact'}</Text>
+              </TouchableOpacity>
+              {showAddForm && (
+                <AnimatedCard delay={0} style={styles.addForm}>
+                  <TextInput style={styles.formInput} placeholder="Full Name" placeholderTextColor={colors.textLight} value={newName} onChangeText={setNewName} />
+                  <TextInput style={styles.formInput} placeholder="Phone Number" placeholderTextColor={colors.textLight} value={newPhone} onChangeText={setNewPhone} keyboardType="phone-pad" />
+                  <TextInput style={styles.formInput} placeholder="Relationship (optional)" placeholderTextColor={colors.textLight} value={newRelation} onChangeText={setNewRelation} />
+                  <TouchableOpacity style={styles.saveBtn} onPress={addContact} disabled={saving}>
+                    {saving ? <ActivityIndicator color={colors.white} /> : <Text style={styles.saveBtnText}>Save Contact</Text>}
+                  </TouchableOpacity>
+                </AnimatedCard>
+              )}
+              {!loading && contacts.length === 0 && <Text style={styles.emptyText}>No personal contacts added yet.</Text>}
+              {contacts.map((item, i) => (
+                <AnimatedCard key={item.id} delay={i * 60} style={styles.contactCard}>
+                  <View style={styles.contactAvatar}>
+                    <Text style={styles.contactAvatarText}>{(item.name || '?').charAt(0).toUpperCase()}</Text>
+                  </View>
+                  <View style={styles.contactInfo}>
+                    <Text style={styles.contactName}>{item.name}</Text>
+                    <Text style={styles.contactPhone}>{item.phone}</Text>
+                    {item.relationship ? <Text style={styles.contactRelation}>{item.relationship}</Text> : null}
+                  </View>
+                  <View style={styles.contactActions}>
+                    <TouchableOpacity style={styles.callBtn} onPress={() => callNumber(item.phone)}>
+                      <Text style={styles.callBtnText}>Call</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.deleteBtn} onPress={() => removeContact(item.id)}>
+                      <Text style={styles.deleteBtnText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                </AnimatedCard>
+              ))}
+            </>
+          )}
+        </ScrollView>
+      </Animated.View>
     </AppLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  tabRow: {
-    flexDirection: 'row',
-    backgroundColor: '#1B2A4A',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    gap: 8,
+  tabWrapper: { backgroundColor: NAV_COLOR, paddingHorizontal: 16, paddingBottom: 14 },
+  tabContainer: {
+    flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 14, overflow: 'hidden', height: 44, position: 'relative',
   },
-  tab: {
-    flex: 1, paddingVertical: 9, alignItems: 'center',
-    borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.1)',
+  tabIndicator: {
+    position: 'absolute', top: 0, bottom: 0, width: '50%',
+    backgroundColor: colors.white, borderRadius: 14,
   },
-  tabActive: { backgroundColor: colors.white },
-  tabText: { ...typography.label, color: 'rgba(255,255,255,0.7)' },
-  tabTextActive: { color: colors.textDark, fontWeight: '700' },
+  tabBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', zIndex: 1 },
+  tabBtnText: { ...typography.label, color: 'rgba(255,255,255,0.7)', fontSize: 13 },
+  tabBtnTextActive: { color: NAV_COLOR, fontWeight: '700' },
 
   bg: { backgroundColor: colors.dashBg },
   scroll: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 24 },
+  loader: { marginBottom: 12 },
   sectionNote: { ...typography.bodySmall, color: colors.textMid, marginBottom: 12, lineHeight: 18 },
+  emptyText: { ...typography.body, color: colors.textMid, textAlign: 'center', marginTop: 20 },
+  errorText: { ...typography.bodySmall, color: colors.danger, textAlign: 'center', marginBottom: 10 },
 
   hotlineCard: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: colors.white, borderRadius: 14,
     padding: 14, marginBottom: 10, elevation: 1,
   },
-  hotlineIcon: { fontSize: 24, marginRight: 12 },
+  hotlineIconBox: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: `${NAV_COLOR}15`,
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+  },
+  hotlineEmoji: { fontSize: 18, color: NAV_COLOR },
   hotlineInfo: { flex: 1 },
   hotlineName: { ...typography.label, color: colors.textDark },
-  hotlineNumber: { ...typography.body, color: colors.textAccent, marginTop: 2 },
+  hotlineNumber: { ...typography.body, color: NAV_COLOR, marginTop: 2 },
+  hotlineDesc: { ...typography.bodySmall, color: colors.textMid, marginTop: 4 },
   callBtn: {
-    backgroundColor: colors.btnPrimary, borderRadius: 20,
+    backgroundColor: NAV_COLOR, borderRadius: 20,
     paddingHorizontal: 16, paddingVertical: 7,
   },
   callBtnText: { ...typography.bodySmall, color: colors.white, fontWeight: '700' },
 
   addBtn: {
-    backgroundColor: colors.btnPrimary, borderRadius: 12,
+    backgroundColor: NAV_COLOR, borderRadius: 12,
     paddingVertical: 12, alignItems: 'center', marginBottom: 14,
   },
   addBtnText: { ...typography.label, color: colors.white, fontWeight: '700' },
@@ -167,12 +272,19 @@ const styles = StyleSheet.create({
   },
   contactAvatar: {
     width: 42, height: 42, borderRadius: 21,
-    backgroundColor: colors.btnPrimary + '20',
+    backgroundColor: `${NAV_COLOR}20`,
     alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
-  contactAvatarText: { ...typography.h4, color: colors.btnPrimary },
+  contactAvatarText: { ...typography.h4, color: NAV_COLOR },
   contactInfo: { flex: 1 },
   contactName: { ...typography.label, color: colors.textDark },
   contactPhone: { ...typography.body, color: colors.textMid, marginTop: 2 },
   contactRelation: { ...typography.bodySmall, color: colors.textLight, marginTop: 2 },
+  contactActions: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  deleteBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: colors.danger,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  deleteBtnText: { color: colors.white, fontSize: 14, fontWeight: '700' },
 });

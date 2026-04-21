@@ -9,10 +9,12 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
+import { useAuth } from '../../context/AuthContext';
 
 export default function RegisterScreen({ navigation }) {
   const [name, setName] = useState('');
@@ -22,6 +24,38 @@ export default function RegisterScreen({ navigation }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const { signUp } = useAuth();
+
+  const handleSignUp = async () => {
+    if (!name.trim() || !username.trim() || !email.trim() || !password || !confirmPassword) {
+      setError('Complete all required fields.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setError('');
+      await signUp({
+        name: name.trim(),
+        username: username.trim(),
+        email: email.trim(),
+        password,
+        confirmPassword,
+      });
+      navigation.replace('Main');
+    } catch (nextError) {
+      setError(nextError.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <KeyboardAvoidingView
@@ -124,8 +158,9 @@ export default function RegisterScreen({ navigation }) {
             {/* Sign Up button */}
             <TouchableOpacity
               style={styles.signUpBtn}
-              onPress={() => navigation.replace('Main')}
+              onPress={handleSignUp}
               activeOpacity={0.85}
+              disabled={submitting}
             >
               <LinearGradient
                 colors={['#3B4FE0', '#5B6FF5']}
@@ -133,9 +168,15 @@ export default function RegisterScreen({ navigation }) {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
               >
-                <Text style={styles.signUpText}>SIGN UP</Text>
+                {submitting ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.signUpText}>SIGN UP</Text>
+                )}
               </LinearGradient>
             </TouchableOpacity>
+
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             <View style={styles.loginRow}>
               <Text style={styles.loginPrompt}>Already have an account? </Text>
@@ -239,5 +280,11 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textDark,
     fontWeight: '700',
+  },
+  errorText: {
+    ...typography.bodySmall,
+    color: colors.danger,
+    textAlign: 'center',
+    marginBottom: 12,
   },
 });

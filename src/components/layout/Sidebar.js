@@ -1,14 +1,9 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Animated,
-  Dimensions,
-  TouchableWithoutFeedback,
-  Image,
+  View, Text, StyleSheet, TouchableOpacity, Animated,
+  Dimensions, TouchableWithoutFeedback, Image,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 
@@ -16,12 +11,12 @@ const { width } = Dimensions.get('window');
 const SIDEBAR_WIDTH = width * 0.72;
 
 const menuItems = [
-  { icon: '🏠', label: 'Dashboard', screen: 'Dashboard' },
-  { icon: '⚙️', label: 'Settings', screen: 'Settings' },
-  { icon: '👤', label: 'Profile', screen: 'Profile' },
+  { icon: 'home',          label: 'Dashboard', screen: 'Dashboard' },
+  { icon: 'settings',      label: 'Settings',  screen: 'Settings'  },
+  { icon: 'person-circle', label: 'Profile',   screen: 'Profile'   },
 ];
 
-export default function Sidebar({ visible, onClose, navigation }) {
+export default function Sidebar({ visible, onClose, navigation, user, onLogout }) {
   const slideAnim = useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
   const overlayAnim = useRef(new Animated.Value(0)).current;
 
@@ -79,7 +74,9 @@ export default function Sidebar({ visible, onClose, navigation }) {
             resizeMode="contain"
           />
           <Text style={styles.drawerAppName}>SmartQuake</Text>
-          <Text style={styles.drawerTagline}>Dashboard, settings, and quick navigation.</Text>
+          <Text style={styles.drawerTagline}>
+            {user?.email || 'Dashboard, settings, and quick navigation.'}
+          </Text>
         </View>
 
         <View style={styles.divider} />
@@ -93,7 +90,7 @@ export default function Sidebar({ visible, onClose, navigation }) {
               onPress={() => handleNavigate(item.screen)}
               activeOpacity={0.7}
             >
-              <Text style={styles.menuItemIcon}>{item.icon}</Text>
+              <Ionicons name={item.icon} size={22} color={colors.white} />
               <Text style={styles.menuItemLabel}>{item.label}</Text>
             </TouchableOpacity>
           ))}
@@ -104,13 +101,14 @@ export default function Sidebar({ visible, onClose, navigation }) {
           <View style={styles.divider} />
           <TouchableOpacity
             style={styles.logoutBtn}
-            onPress={() => {
+            onPress={async () => {
               onClose();
+              await onLogout();
               setTimeout(() => navigation.replace('Auth'), 260);
             }}
             activeOpacity={0.85}
           >
-            <Text style={styles.logoutIcon}>🚪</Text>
+            <Ionicons name="log-out-outline" size={20} color={colors.white} />
             <Text style={styles.logoutText}>Log Out</Text>
           </TouchableOpacity>
         </View>
@@ -180,11 +178,7 @@ const styles = StyleSheet.create({
     gap: 16,
     marginBottom: 4,
   },
-  menuItemIcon: { fontSize: 20 },
-  menuItemLabel: {
-    ...typography.h4,
-    color: colors.white,
-  },
+  menuItemLabel: { ...typography.h4, color: colors.white },
 
   drawerFooter: {
     position: 'absolute',
@@ -204,7 +198,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     gap: 10,
   },
-  logoutIcon: { fontSize: 18 },
+  logoutIcon: { fontSize: 18, color: colors.white },
   logoutText: {
     ...typography.button,
     color: colors.white,

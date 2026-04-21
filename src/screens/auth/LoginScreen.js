@@ -10,15 +10,38 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
+import { useAuth } from '../../context/AuthContext';
 
 export default function LoginScreen({ navigation }) {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const { signIn } = useAuth();
+
+  const handleSignIn = async () => {
+    if (!login.trim() || !password) {
+      setError('Enter your email or username and password.');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setError('');
+      await signIn({ login: login.trim(), password });
+      navigation.replace('Main');
+    } catch (nextError) {
+      setError(nextError.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <KeyboardAvoidingView
@@ -90,8 +113,9 @@ export default function LoginScreen({ navigation }) {
             {/* Sign In button */}
             <TouchableOpacity
               style={styles.signInBtn}
-              onPress={() => navigation.replace('Main')}
+              onPress={handleSignIn}
               activeOpacity={0.85}
+              disabled={submitting}
             >
               <LinearGradient
                 colors={['#3B4FE0', '#5B6FF5']}
@@ -99,9 +123,15 @@ export default function LoginScreen({ navigation }) {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
               >
-                <Text style={styles.signInText}>SIGN IN</Text>
+                {submitting ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.signInText}>SIGN IN</Text>
+                )}
               </LinearGradient>
             </TouchableOpacity>
+
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             <View style={styles.registerRow}>
               <Text style={styles.registerPrompt}>Don't have an account? </Text>
@@ -223,5 +253,11 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textDark,
     fontWeight: '700',
+  },
+  errorText: {
+    ...typography.bodySmall,
+    color: colors.danger,
+    textAlign: 'center',
+    marginBottom: 12,
   },
 });

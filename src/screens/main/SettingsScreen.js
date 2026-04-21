@@ -1,64 +1,104 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
-  Switch, TouchableOpacity, StatusBar,
+  View, Text, StyleSheet, ScrollView, Switch,
+  TouchableOpacity, StatusBar, ActivityIndicator,
 } from 'react-native';
 import AppLayout from '../../components/layout/AppLayout';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
+import { useAuth } from '../../context/AuthContext';
+
+const FONT_MAP = { S: 'small', M: 'medium', L: 'large' };
+const LANGUAGES = ['English', 'Tagalog', 'Kapampangan'];
 
 export default function SettingsScreen({ navigation }) {
-  const [darkMode, setDarkMode] = useState(true);
-  const [highContrast, setHighContrast] = useState(true);
-  const [tts, setTts] = useState(true);
-  const [fontSize, setFontSize] = useState('M');
-  const [language, setLanguage] = useState('English');
+  const { settings, updateSettings, signOut } = useAuth();
+
+  const [darkMode,     setDarkMode]     = useState(Boolean(settings.dark_mode));
+  const [highContrast, setHighContrast] = useState(Boolean(settings.high_contrast));
+  const [tts,          setTts]          = useState(Boolean(settings.text_to_speech));
+  const [fontSize,     setFontSize]     = useState(settings.fontSizeLabel || 'M');
+  const [language,     setLanguage]     = useState(settings.language || 'English');
+  const [saving,       setSaving]       = useState(false);
+  const [toast,        setToast]        = useState('');
+  const [error,        setError]        = useState('');
+
+  useEffect(() => {
+    setDarkMode(Boolean(settings.dark_mode));
+    setHighContrast(Boolean(settings.high_contrast));
+    setTts(Boolean(settings.text_to_speech));
+    setFontSize(settings.fontSizeLabel || 'M');
+    setLanguage(settings.language || 'English');
+  }, [settings]);
+
+  const persist = async (partial, label) => {
+    try {
+      setSaving(true);
+      setError('');
+      await updateSettings(partial);
+      if (label) {
+        setToast(label);
+        setTimeout(() => setToast(''), 2000);
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <AppLayout navigation={navigation}>
       <StatusBar barStyle="light-content" backgroundColor="#1B2A4A" />
-      {/* Hero banner */}
+
+      {/* Hero */}
       <View style={styles.heroBanner}>
         <Text style={styles.heroEyebrow}>Settings</Text>
         <View style={styles.heroRow}>
-          <Text style={styles.heroTitle}>Adjust appearance, accessibility, and account preferences</Text>
+          <Text style={styles.heroTitle}>Appearance, accessibility, and account preferences</Text>
           <View style={styles.heroIcon}><Text style={{ fontSize: 20 }}>⚙️</Text></View>
         </View>
       </View>
 
+      {/* Toast */}
+      {toast ? (
+        <View style={styles.toast}>
+          <Text style={styles.toastText}>✓ {toast}</Text>
+        </View>
+      ) : null}
+
       <ScrollView style={styles.bg} contentContainerStyle={styles.scroll}>
+        {saving && <ActivityIndicator color={colors.btnPrimary} style={styles.loader} />}
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
         {/* Appearance */}
         <Text style={styles.sectionTitle}>Appearance</Text>
-        <View style={styles.settingsCard}>
-          <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Dark mode</Text>
-            <Switch value={darkMode} onValueChange={setDarkMode}
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Dark mode</Text>
+            <Switch value={darkMode}
+              onValueChange={(v) => { setDarkMode(v); persist({ dark_mode: v }, 'Dark mode updated'); }}
               trackColor={{ false: colors.inputBorder, true: '#1B2A4A' }}
               thumbColor={colors.white} />
           </View>
-
-          <View style={styles.rowDivider} />
-
-          <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Font size</Text>
+          <View style={styles.divider} />
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Font size</Text>
             <View style={styles.segmented}>
               {['S', 'M', 'L'].map((s) => (
-                <TouchableOpacity
-                  key={s}
+                <TouchableOpacity key={s}
                   style={[styles.segBtn, fontSize === s && styles.segBtnActive]}
-                  onPress={() => setFontSize(s)}
-                >
+                  onPress={() => { setFontSize(s); persist({ font_size: FONT_MAP[s] }, `Font size: ${s}`); }}>
                   <Text style={[styles.segBtnText, fontSize === s && styles.segBtnTextActive]}>{s}</Text>
                 </TouchableOpacity>
               ))}
             </View>
           </View>
-
-          <View style={styles.rowDivider} />
-
-          <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>High contrast</Text>
-            <Switch value={highContrast} onValueChange={setHighContrast}
+          <View style={styles.divider} />
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>High contrast</Text>
+            <Switch value={highContrast}
+              onValueChange={(v) => { setHighContrast(v); persist({ high_contrast: v }, 'High contrast updated'); }}
               trackColor={{ false: colors.inputBorder, true: '#1B2A4A' }}
               thumbColor={colors.white} />
           </View>
@@ -66,10 +106,11 @@ export default function SettingsScreen({ navigation }) {
 
         {/* Accessibility */}
         <Text style={styles.sectionTitle}>Accessibility</Text>
-        <View style={styles.settingsCard}>
-          <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Text-to-speech</Text>
-            <Switch value={tts} onValueChange={setTts}
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>Text-to-speech</Text>
+            <Switch value={tts}
+              onValueChange={(v) => { setTts(v); persist({ text_to_speech: v }, 'Text-to-speech updated'); }}
               trackColor={{ false: colors.inputBorder, true: '#1B2A4A' }}
               thumbColor={colors.white} />
           </View>
@@ -77,16 +118,23 @@ export default function SettingsScreen({ navigation }) {
 
         {/* Language */}
         <Text style={styles.sectionTitle}>Language</Text>
-        <View style={styles.settingsCard}>
-          <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>App language</Text>
-            <View style={styles.langSelector}>
-              {['English', 'Tagalog', 'Kapampangan'].map((l) => (
-                <TouchableOpacity key={l} onPress={() => setLanguage(l)}>
-                  <Text style={[styles.langOption, language === l && styles.langOptionActive]}>{l}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+        <View style={styles.card}>
+          <Text style={styles.rowLabel}>App language</Text>
+          <View style={styles.langRow}>
+            {LANGUAGES.map((lang) => (
+              <TouchableOpacity
+                key={lang}
+                style={[styles.langChip, language === lang && styles.langChipActive]}
+                onPress={() => {
+                  setLanguage(lang);
+                  persist({ language: lang }, `Language: ${lang}`);
+                }}
+              >
+                <Text style={[styles.langChipText, language === lang && styles.langChipTextActive]}>
+                  {lang}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
@@ -94,7 +142,7 @@ export default function SettingsScreen({ navigation }) {
         <Text style={styles.sectionTitle}>Account</Text>
         <TouchableOpacity
           style={styles.logoutBtn}
-          onPress={() => navigation.replace('Auth')}
+          onPress={async () => { await signOut(); navigation.replace('Auth'); }}
           activeOpacity={0.85}
         >
           <Text style={styles.logoutText}>🚪  Log Out</Text>
@@ -118,33 +166,47 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center', justifyContent: 'center',
   },
+
+  toast: {
+    backgroundColor: '#27AE60', paddingVertical: 10,
+    paddingHorizontal: 20, alignItems: 'center',
+  },
+  toastText: { ...typography.label, color: colors.white },
+
   scroll: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32 },
+  loader: { marginBottom: 12 },
+  errorText: { ...typography.bodySmall, color: colors.danger, textAlign: 'center', marginBottom: 12 },
   sectionTitle: { ...typography.h3, color: colors.textDark, marginBottom: 10 },
 
-  settingsCard: {
+  card: {
     backgroundColor: colors.white, borderRadius: 16,
     paddingHorizontal: 16, marginBottom: 24, elevation: 1,
   },
-  settingRow: {
+  row: {
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between', paddingVertical: 14,
   },
-  settingLabel: { ...typography.body, color: colors.textDark },
-  rowDivider: { height: 1, backgroundColor: colors.inputBorder },
+  rowLabel: { ...typography.body, color: colors.textDark },
+  divider: { height: 1, backgroundColor: colors.inputBorder },
 
   segmented: {
-    flexDirection: 'row',
-    borderWidth: 1.5, borderColor: colors.inputBorder,
-    borderRadius: 20, overflow: 'hidden',
+    flexDirection: 'row', borderWidth: 1.5,
+    borderColor: colors.inputBorder, borderRadius: 20, overflow: 'hidden',
   },
   segBtn: { paddingHorizontal: 16, paddingVertical: 6 },
   segBtnActive: { backgroundColor: '#1B2A4A' },
   segBtnText: { ...typography.label, color: colors.textMid },
   segBtnTextActive: { color: colors.white },
 
-  langSelector: { flexDirection: 'column', alignItems: 'flex-end', gap: 4 },
-  langOption: { ...typography.body, color: colors.textMid },
-  langOptionActive: { color: colors.btnPrimary, fontWeight: '700' },
+  langRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 14 },
+  langChip: {
+    paddingHorizontal: 16, paddingVertical: 8,
+    borderRadius: 20, borderWidth: 1.5,
+    borderColor: colors.inputBorder, backgroundColor: colors.dashBg,
+  },
+  langChipActive: { backgroundColor: '#1B2A4A', borderColor: '#1B2A4A' },
+  langChipText: { ...typography.label, color: colors.textMid },
+  langChipTextActive: { color: colors.white },
 
   logoutBtn: {
     backgroundColor: '#C0392B', borderRadius: 14,
