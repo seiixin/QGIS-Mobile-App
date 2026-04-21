@@ -3,12 +3,14 @@ import { View, Text, TouchableOpacity, StyleSheet, Image, Animated } from 'react
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
+import { useTheme } from '../../context/ThemeContext';
 
 export default function TopNav({ onMenuPress, onSettingsPress, user }) {
   const { isOnline } = useNetworkStatus();
+  const theme = useTheme();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.navBg }]}>
       <TouchableOpacity style={styles.menuBtn} onPress={onMenuPress} activeOpacity={0.7}>
         <View style={styles.menuLine} />
         <View style={[styles.menuLine, { width: 18 }]} />

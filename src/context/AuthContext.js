@@ -107,6 +107,24 @@ export function AuthProvider({ children }) {
     return nextSettings;
   };
 
+  const updateUser = async (payload) => {
+    const updated = await apiRequest('/auth/profile', {
+      method: 'PUT',
+      token,
+      body: payload,
+    });
+    setUser(updated.user);
+    return updated;
+  };
+
+  const updatePassword = async (payload) => {
+    return apiRequest('/auth/password', {
+      method: 'PUT',
+      token,
+      body: payload,
+    });
+  };
+
   const value = useMemo(() => ({
     token,
     user,
@@ -120,6 +138,8 @@ export function AuthProvider({ children }) {
     signOut,
     refreshSettings,
     updateSettings,
+    updateUser,
+    updatePassword,
   }), [token, user, settings]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -31,11 +31,11 @@ const NAV_COLOR = '#1B2A4A';
 
 // ─── Icon map per tab ─────────────────────────────────────────────────────────
 const TAB_ICONS = {
-  Impact:     { active: 'bar-chart',          inactive: 'bar-chart-outline'       },
+  Impact:     { active: 'bar-chart',          inactive: 'bar-chart-outline'          },
   Info:       { active: 'information-circle', inactive: 'information-circle-outline' },
-  Map:        { active: 'map',                inactive: 'map-outline'             },
-  OfflineMap: { active: 'download',           inactive: 'download-outline'        },
-  Emergency:  { active: 'call',               inactive: 'call-outline'            },
+  Map:        { active: 'map',                inactive: 'map-outline'                },
+  OfflineMap: { active: 'download',           inactive: 'download-outline'           },
+  Emergency:  { active: 'call',               inactive: 'call-outline'               },
 };
 
 const TabIcon = ({ name, label, focused }) => {
@@ -54,14 +54,14 @@ const TabIcon = ({ name, label, focused }) => {
   return (
     <Animated.View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 2, transform: [{ scale: scaleAnim }] }}>
       <View style={[styles.tabIconWrap, focused && styles.tabIconWrapActive]}>
-        <Ionicons name={iconName} size={22} color={focused ? NAV_COLOR : colors.tabInactive} />
+        <Ionicons name={iconName} size={22} color={focused ? '#FFFFFF' : 'rgba(255,255,255,0.45)'} />
       </View>
       <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>{label}</Text>
     </Animated.View>
   );
 };
 
-// ─── Bottom tabs (the 5 main content tabs) ────────────────────────────────────
+// ─── Bottom tabs (5 content tabs) ─────────────────────────────────────────────
 function MainTabs() {
   return (
     <Tab.Navigator
@@ -69,12 +69,12 @@ function MainTabs() {
         headerShown: false,
         tabBarShowLabel: false,
         tabBarStyle: {
-          backgroundColor: colors.white,
+          backgroundColor: '#1B2A4A',
           borderTopWidth: 0,
           elevation: 12,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -3 },
-          shadowOpacity: 0.08,
+          shadowOpacity: 0.2,
           shadowRadius: 10,
           height: 64,
           paddingBottom: 8,
@@ -96,14 +96,14 @@ function MainTabs() {
   );
 }
 
-// ─── Main stack (tabs + sidebar destinations) ─────────────────────────────────
+// ─── Main stack — tabs + sidebar-only screens ─────────────────────────────────
 function MainNavigator() {
   return (
     <MainStack.Navigator screenOptions={{ headerShown: false }}>
       <MainStack.Screen name="Dashboard" component={DashboardScreen} />
-      <MainStack.Screen name="Tabs" component={MainTabs} />
-      <MainStack.Screen name="Profile" component={ProfileScreen} />
-      <MainStack.Screen name="Settings" component={SettingsScreen} />
+      <MainStack.Screen name="Tabs"      component={MainTabs} />
+      <MainStack.Screen name="Profile"   component={ProfileScreen} />
+      <MainStack.Screen name="Settings"  component={SettingsScreen} />
     </MainStack.Navigator>
   );
 }
@@ -138,7 +138,7 @@ const styles = StyleSheet.create({
     width: 36, height: 28, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
   },
-  tabIconWrapActive: { backgroundColor: `${NAV_COLOR}15` },
-  tabLabel: { fontSize: 10, marginTop: 2, color: colors.tabInactive },
-  tabLabelActive: { color: NAV_COLOR, fontWeight: '700' },
+  tabIconWrapActive: { backgroundColor: 'rgba(255,255,255,0.15)' },
+  tabLabel: { fontSize: 10, marginTop: 2, color: 'rgba(255,255,255,0.45)' },
+  tabLabelActive: { color: '#FFFFFF', fontWeight: '700' },
 });

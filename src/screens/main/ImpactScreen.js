@@ -5,7 +5,10 @@ import AppLayout from '../../components/layout/AppLayout';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { apiRequest } from '../../lib/apiClient';
+import { useTypography } from '../../hooks/useTypography';
+import { useTranslation } from '../../hooks/useTranslation';
 
 // ── Static breakdown data from PHIVOLCS PEIS simulation ──────────────────────
 // Keyed by fault_name to match production API
@@ -32,30 +35,31 @@ const INJURY_ROWS = [
 ];
 
 // ── Comparison table: Day vs Night ───────────────────────────────────────────
-function BreakdownTable({ breakdown }) {
+function BreakdownTable({ breakdown, theme }) {
+  const t = useTypography();
   const { dayColor, nightColor, day, night } = breakdown;
 
   return (
-    <View style={styles.table}>
+    <View style={[styles.table, { borderColor: theme.border }]}>
       {/* Header row */}
       <View style={[styles.tableRow, styles.tableHeader]}>
-        <Text style={[styles.tableCell, styles.tableCellLabel]} />
+        <Text style={[styles.tableCell, styles.tableCellLabel, { color: theme.textPrimary }]} />
         <View style={[styles.tableCell, styles.tableCellDay, { backgroundColor: dayColor }]}>
-          <Text style={styles.tableHeaderText}>☀️ Day</Text>
+          <Text style={[styles.tableHeaderText, { fontSize: t.label.fontSize }]}>☀️ Day</Text>
         </View>
         <View style={[styles.tableCell, styles.tableCellNight, { backgroundColor: nightColor }]}>
-          <Text style={styles.tableHeaderText}>🌙 Night</Text>
+          <Text style={[styles.tableHeaderText, { fontSize: t.label.fontSize }]}>🌙 Night</Text>
         </View>
       </View>
 
       {/* Data rows */}
       {INJURY_ROWS.map((row, i) => (
-        <View key={row.key} style={[styles.tableRow, i % 2 === 1 && styles.tableRowAlt]}>
-          <Text style={[styles.tableCell, styles.tableCellLabel]}>{row.label}</Text>
-          <Text style={[styles.tableCell, styles.tableCellDay, styles.tableCellNum, { color: dayColor }]}>
+        <View key={row.key} style={[styles.tableRow, i % 2 === 1 && { backgroundColor: theme.dark ? '#1e2f47' : '#FAFAFA' }, { backgroundColor: i % 2 === 0 ? theme.card : undefined }]}>
+          <Text style={[styles.tableCell, styles.tableCellLabel, { color: theme.textPrimary, fontSize: t.bodySmall.fontSize }]}>{row.label}</Text>
+          <Text style={[styles.tableCell, styles.tableCellDay, styles.tableCellNum, { color: dayColor, fontSize: t.h4.fontSize }]}>
             {day[row.key] ?? '—'}
           </Text>
-          <Text style={[styles.tableCell, styles.tableCellNight, styles.tableCellNum, { color: nightColor }]}>
+          <Text style={[styles.tableCell, styles.tableCellNight, styles.tableCellNum, { color: nightColor, fontSize: t.h4.fontSize }]}>
             {night[row.key] ?? '—'}
           </Text>
         </View>
@@ -66,20 +70,23 @@ function BreakdownTable({ breakdown }) {
 
 // ── Scenario card ─────────────────────────────────────────────────────────────
 function ImpactCard({ item }) {
+  const theme = useTheme();
+  const t = useTypography();
+  const { t: tr } = useTranslation();
   const breakdown = BREAKDOWN_DATA[item.fault_name];
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.scenarioName}>{item.scenario_name}</Text>
-      <Text style={styles.faultName}>Fault: {item.fault_name}</Text>
+    <View style={[styles.card, { backgroundColor: theme.card }]}>
+      <Text style={[styles.scenarioName, { color: theme.textPrimary, fontSize: t.h3.fontSize }]}>{item.scenario_name}</Text>
+      <Text style={[styles.faultName, { color: theme.textSecondary, fontSize: t.bodySmall.fontSize }]}>{tr('Fault:')} {item.fault_name}</Text>
 
       {breakdown ? (
-        <BreakdownTable breakdown={breakdown} />
+        <BreakdownTable breakdown={breakdown} theme={theme} />
       ) : (
         // Historical events — no day/night data
         <View style={[styles.statBox, { backgroundColor: '#FFF0F0' }]}>
-          <Text style={styles.statLabel}>Total Casualties</Text>
-          <Text style={styles.statValueRed}>
+          <Text style={[styles.statLabel, { fontSize: t.bodySmall.fontSize }]}>{tr('Total Casualties')}</Text>
+          <Text style={[styles.statValueRed, { fontSize: t.label.fontSize }]}>
             👤 {Number(item.casualties || 0).toLocaleString()}
           </Text>
         </View>
@@ -91,6 +98,9 @@ function ImpactCard({ item }) {
 // ── Screen ────────────────────────────────────────────────────────────────────
 export default function ImpactScreen({ navigation }) {
   const { token } = useAuth();
+  const theme = useTheme();
+  const t = useTypography();
+  const { t: tr } = useTranslation();
   const [impactData, setImpactData] = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState('');
@@ -114,18 +124,18 @@ export default function ImpactScreen({ navigation }) {
     <AppLayout navigation={navigation}>
       <StatusBar barStyle="light-content" backgroundColor="#1B2A4A" />
       <View style={styles.heroBanner}>
-        <Text style={styles.heroEyebrow}>Impact results</Text>
+        <Text style={[styles.heroEyebrow, { fontSize: t.bodySmall.fontSize }]}>{tr('Impact results')}</Text>
         <View style={styles.heroRow}>
-          <Text style={styles.heroTitle}>Estimated casualties by fault scenario</Text>
+          <Text style={[styles.heroTitle, { fontSize: t.h3.fontSize }]}>{tr('Estimated casualties by fault scenario')}</Text>
           <View style={styles.heroIcon}><Text style={{ fontSize: 22 }}>📊</Text></View>
         </View>
       </View>
 
-      <ScrollView style={styles.bg} contentContainerStyle={styles.scroll}>
+      <ScrollView style={[styles.bg, { backgroundColor: theme.bg }]} contentContainerStyle={styles.scroll}>
         {loading && <ActivityIndicator color={colors.btnPrimary} style={styles.loader} />}
-        {!loading && error ? <Text style={styles.statusText}>{error}</Text> : null}
+        {!loading && error ? <Text style={[styles.statusText, { color: theme.textSecondary, fontSize: t.body.fontSize }]}>{error}</Text> : null}
         {!loading && !error && impactData.length === 0 && (
-          <Text style={styles.statusText}>No impact results available yet.</Text>
+          <Text style={[styles.statusText, { color: theme.textSecondary, fontSize: t.body.fontSize }]}>{tr('No impact results available yet.')}</Text>
         )}
         {impactData.map((item) => (
           <ImpactCard key={item.id} item={item} />

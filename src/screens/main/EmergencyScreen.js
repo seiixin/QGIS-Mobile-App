@@ -8,7 +8,10 @@ import AppLayout from '../../components/layout/AppLayout';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { apiRequest } from '../../lib/apiClient';
+import { useTypography } from '../../hooks/useTypography';
+import { useTranslation } from '../../hooks/useTranslation';
 
 const NAV_COLOR = '#1B2A4A';
 
@@ -22,6 +25,8 @@ function callNumber(number) {
 
 // ── Animated sliding tab ──────────────────────────────────────────────────────
 function TabBar({ activeTab, onSwitch }) {
+  const t = useTypography();
+  const { t: tr } = useTranslation();
   const anim = useRef(new Animated.Value(activeTab === 'hotlines' ? 0 : 1)).current;
 
   const switchTo = (tab) => {
@@ -35,13 +40,13 @@ function TabBar({ activeTab, onSwitch }) {
     <View style={styles.tabContainer}>
       <Animated.View style={[styles.tabIndicator, { left: indicatorLeft }]} />
       <TouchableOpacity style={styles.tabBtn} onPress={() => switchTo('hotlines')} activeOpacity={0.8}>
-        <Text style={[styles.tabBtnText, activeTab === 'hotlines' && styles.tabBtnTextActive]}>
-          ☎  Hotlines
+        <Text style={[styles.tabBtnText, { fontSize: t.label.fontSize }, activeTab === 'hotlines' && styles.tabBtnTextActive]}>
+          {tr('☎  Hotlines')}
         </Text>
       </TouchableOpacity>
       <TouchableOpacity style={styles.tabBtn} onPress={() => switchTo('contacts')} activeOpacity={0.8}>
-        <Text style={[styles.tabBtnText, activeTab === 'contacts' && styles.tabBtnTextActive]}>
-          ✦  My Contacts
+        <Text style={[styles.tabBtnText, { fontSize: t.label.fontSize }, activeTab === 'contacts' && styles.tabBtnTextActive]}>
+          {tr('✦  My Contacts')}
         </Text>
       </TouchableOpacity>
     </View>
@@ -66,6 +71,9 @@ function AnimatedCard({ children, delay = 0, style }) {
 
 export default function EmergencyScreen({ navigation }) {
   const { token } = useAuth();
+  const theme = useTheme();
+  const t = useTypography();
+  const { t: tr } = useTranslation();
   const [activeTab, setActiveTab]     = useState('hotlines');
   const [hotlines, setHotlines]       = useState([]);
   const [contacts, setContacts]       = useState([]);
@@ -115,9 +123,9 @@ export default function EmergencyScreen({ navigation }) {
   };
 
   const removeContact = (id) => {
-    Alert.alert('Remove contact', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: async () => {
+    Alert.alert(tr('Remove contact'), tr('Are you sure?'), [
+      { text: tr('Cancel'), style: 'cancel' },
+      { text: tr('Remove'), style: 'destructive', onPress: async () => {
         try {
           await apiRequest(`/emergency/contacts/${id}`, { method: 'DELETE', token });
           setContacts(c => c.filter(i => i.id !== id));
@@ -136,26 +144,26 @@ export default function EmergencyScreen({ navigation }) {
       </View>
 
       <Animated.View style={{ flex: 1, opacity: contentFade }}>
-        <ScrollView style={styles.bg} contentContainerStyle={styles.scroll}>
+        <ScrollView style={[styles.bg, { backgroundColor: theme.bg }]} contentContainerStyle={styles.scroll}>
           {loading && <ActivityIndicator color={colors.btnPrimary} style={styles.loader} />}
-          {!loading && error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {!loading && error ? <Text style={[styles.errorText, { fontSize: t.bodySmall.fontSize }]}>{error}</Text> : null}
 
           {activeTab === 'hotlines' ? (
             <>
-              <Text style={styles.sectionNote}>Official emergency hotlines for Pampanga and national agencies.</Text>
-              {!loading && hotlines.length === 0 && <Text style={styles.emptyText}>No official hotlines available yet.</Text>}
+              <Text style={[styles.sectionNote, { color: theme.textSecondary, fontSize: t.bodySmall.fontSize }]}>{tr('Official emergency hotlines for Pampanga and national agencies.')}</Text>
+              {!loading && hotlines.length === 0 && <Text style={[styles.emptyText, { color: theme.textSecondary, fontSize: t.body.fontSize }]}>{tr('No official hotlines available yet.')}</Text>}
               {hotlines.map((item, i) => (
-                <AnimatedCard key={item.id} delay={i * 60} style={styles.hotlineCard}>
+                <AnimatedCard key={item.id} delay={i * 60} style={[styles.hotlineCard, { backgroundColor: theme.card }]}>
                   <View style={styles.hotlineIconBox}>
                     <Text style={styles.hotlineEmoji}>☎</Text>
                   </View>
                   <View style={styles.hotlineInfo}>
-                    <Text style={styles.hotlineName}>{item.agency_name}</Text>
-                    <Text style={styles.hotlineNumber}>{item.phone_number}</Text>
-                    {item.description ? <Text style={styles.hotlineDesc}>{item.description}</Text> : null}
+                    <Text style={[styles.hotlineName, { color: theme.textPrimary, fontSize: t.label.fontSize }]}>{item.agency_name}</Text>
+                    <Text style={[styles.hotlineNumber, { fontSize: t.body.fontSize }]}>{item.phone_number}</Text>
+                    {item.description ? <Text style={[styles.hotlineDesc, { color: theme.textSecondary, fontSize: t.bodySmall.fontSize }]}>{item.description}</Text> : null}
                   </View>
                   <TouchableOpacity style={styles.callBtn} onPress={() => callNumber(item.phone_number)}>
-                    <Text style={styles.callBtnText}>Call</Text>
+                    <Text style={[styles.callBtnText, { fontSize: t.bodySmall.fontSize }]}>{tr('Call')}</Text>
                   </TouchableOpacity>
                 </AnimatedCard>
               ))}
@@ -163,32 +171,32 @@ export default function EmergencyScreen({ navigation }) {
           ) : (
             <>
               <TouchableOpacity style={styles.addBtn} onPress={() => setShowAddForm(v => !v)}>
-                <Text style={styles.addBtnText}>{showAddForm ? '✕  Cancel' : '+  Add Contact'}</Text>
+                <Text style={[styles.addBtnText, { fontSize: t.label.fontSize }]}>{showAddForm ? tr('✕  Cancel') : tr('+  Add Contact')}</Text>
               </TouchableOpacity>
               {showAddForm && (
-                <AnimatedCard delay={0} style={styles.addForm}>
-                  <TextInput style={styles.formInput} placeholder="Full Name" placeholderTextColor={colors.textLight} value={newName} onChangeText={setNewName} />
-                  <TextInput style={styles.formInput} placeholder="Phone Number" placeholderTextColor={colors.textLight} value={newPhone} onChangeText={setNewPhone} keyboardType="phone-pad" />
-                  <TextInput style={styles.formInput} placeholder="Relationship (optional)" placeholderTextColor={colors.textLight} value={newRelation} onChangeText={setNewRelation} />
+                <AnimatedCard delay={0} style={[styles.addForm, { backgroundColor: theme.card }]}>
+                  <TextInput style={[styles.formInput, { borderBottomColor: theme.border, color: theme.textPrimary }]} placeholder="Full Name" placeholderTextColor={theme.textMuted} value={newName} onChangeText={setNewName} />
+                  <TextInput style={[styles.formInput, { borderBottomColor: theme.border, color: theme.textPrimary }]} placeholder="Phone Number" placeholderTextColor={theme.textMuted} value={newPhone} onChangeText={setNewPhone} keyboardType="phone-pad" />
+                  <TextInput style={[styles.formInput, { borderBottomColor: theme.border, color: theme.textPrimary }]} placeholder="Relationship (optional)" placeholderTextColor={theme.textMuted} value={newRelation} onChangeText={setNewRelation} />
                   <TouchableOpacity style={styles.saveBtn} onPress={addContact} disabled={saving}>
-                    {saving ? <ActivityIndicator color={colors.white} /> : <Text style={styles.saveBtnText}>Save Contact</Text>}
+                    {saving ? <ActivityIndicator color={colors.white} /> : <Text style={[styles.saveBtnText, { fontSize: t.label.fontSize }]}>{tr('Save Contact')}</Text>}
                   </TouchableOpacity>
                 </AnimatedCard>
               )}
-              {!loading && contacts.length === 0 && <Text style={styles.emptyText}>No personal contacts added yet.</Text>}
+              {!loading && contacts.length === 0 && <Text style={[styles.emptyText, { color: theme.textSecondary, fontSize: t.body.fontSize }]}>{tr('No personal contacts added yet.')}</Text>}
               {contacts.map((item, i) => (
-                <AnimatedCard key={item.id} delay={i * 60} style={styles.contactCard}>
+                <AnimatedCard key={item.id} delay={i * 60} style={[styles.contactCard, { backgroundColor: theme.card }]}>
                   <View style={styles.contactAvatar}>
-                    <Text style={styles.contactAvatarText}>{(item.name || '?').charAt(0).toUpperCase()}</Text>
+                    <Text style={[styles.contactAvatarText, { fontSize: t.h4.fontSize }]}>{(item.name || '?').charAt(0).toUpperCase()}</Text>
                   </View>
                   <View style={styles.contactInfo}>
-                    <Text style={styles.contactName}>{item.name}</Text>
-                    <Text style={styles.contactPhone}>{item.phone}</Text>
-                    {item.relationship ? <Text style={styles.contactRelation}>{item.relationship}</Text> : null}
+                    <Text style={[styles.contactName, { color: theme.textPrimary, fontSize: t.label.fontSize }]}>{item.name}</Text>
+                    <Text style={[styles.contactPhone, { color: theme.textSecondary, fontSize: t.body.fontSize }]}>{item.phone}</Text>
+                    {item.relationship ? <Text style={[styles.contactRelation, { color: theme.textMuted, fontSize: t.bodySmall.fontSize }]}>{item.relationship}</Text> : null}
                   </View>
                   <View style={styles.contactActions}>
                     <TouchableOpacity style={styles.callBtn} onPress={() => callNumber(item.phone)}>
-                      <Text style={styles.callBtnText}>Call</Text>
+                      <Text style={[styles.callBtnText, { fontSize: t.bodySmall.fontSize }]}>{tr('Call')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.deleteBtn} onPress={() => removeContact(item.id)}>
                       <Text style={styles.deleteBtnText}>✕</Text>

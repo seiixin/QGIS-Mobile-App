@@ -7,10 +7,12 @@ import MapView, { Polyline, Polygon, Marker, Circle, PROVIDER_DEFAULT } from 're
 import * as Location from 'expo-location';
 import { useAuth } from '../../context/AuthContext';
 import AppLayout from '../../components/layout/AppLayout';
+import { useTheme } from '../../context/ThemeContext';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { resolveApiUrl } from '../../config/api';
 import { useVoiceNavigation } from '../../hooks/useVoiceNavigation';
+import { logActivity } from '../../lib/activityStore';
 
 // ── Polygon / line layers ─────────────────────────────────────────────────────
 import PoliticalBoundary from '../../data/geojson/Political_Boundary.json';
@@ -214,6 +216,17 @@ const POLYGON_LAYERS = [
 
 const ALL_LAYERS = [...POLYGON_LAYERS, ...POINT_LAYERS];
 
+// ── Dark map style (Google Maps JSON) ─────────────────────────────────────────
+const DARK_MAP_STYLE = [
+  { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1626' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#38414e' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#212a37' }] },
+  { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#6f9ba5' }] },
+];
+
 // ── Renderers ─────────────────────────────────────────────────────────────────
 function coordsToLatLng(ring) {
   return ring.map(([lng, lat]) => ({ latitude: lat, longitude: lng }));
@@ -304,6 +317,7 @@ function PointMarker({ feature, cfg, idx, onPress, selectedDestId }) {
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function MapScreen({ navigation }) {
   const { token, settings } = useAuth();
+  const theme = useTheme();
   const mapRef    = useRef(null);
   const regionRef = useRef(SAN_VICENTE_REGION);
 
@@ -339,6 +353,11 @@ export default function MapScreen({ navigation }) {
   useEffect(() => {
     if (arrived && activeRoute) {
       setArrivalModal({ emoji: activeRoute.emoji, label: activeRoute.label });
+      logActivity({
+        type:  'arrival',
+        label: 'You have arrived!',
+        sub:   `Destination: ${activeRoute.emoji} ${activeRoute.label}`,
+      });
     }
   }, [arrived]);
 
@@ -454,7 +473,9 @@ export default function MapScreen({ navigation }) {
       <View style={styles.container}>
 
         <MapView ref={mapRef} style={styles.map} provider={PROVIDER_DEFAULT}
-          initialRegion={SAN_VICENTE_REGION} mapType="standard"
+          initialRegion={SAN_VICENTE_REGION}
+          mapType="standard"
+          customMapStyle={theme.dark ? DARK_MAP_STYLE : []}
           onRegionChange={r => { regionRef.current = r; }}>
 
           {/* Polygon / line layers — road condition layers dim when route active */}
@@ -524,17 +545,17 @@ export default function MapScreen({ navigation }) {
 
         {/* Route info card */}
         {activeRoute && (
-          <View style={styles.routeCard}>
+          <View style={[styles.routeCard, { backgroundColor: theme.dark ? 'rgba(13,27,42,0.97)' : 'rgba(255,255,255,0.97)' }]}>
             <View style={styles.routeCardRow}>
               <Text style={styles.routeCardEmoji}>{activeRoute.emoji}</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.routeCardLabel}>{activeRoute.label}</Text>
-                <Text style={styles.routeCardDist}>
+                <Text style={[styles.routeCardLabel, { color: theme.textPrimary }]}>{activeRoute.label}</Text>
+                <Text style={[styles.routeCardDist, { color: theme.textSecondary }]}>
                 {formatDist(activeRoute.distanceM)}{activeRoute.isFallback ? ' (straight line)' : ' via road'}
               </Text>
               </View>
-              <TouchableOpacity style={styles.routeClearBtn} onPress={clearRoute}>
-                <Text style={styles.routeClearText}>✕</Text>
+              <TouchableOpacity style={[styles.routeClearBtn, { backgroundColor: theme.border }]} onPress={clearRoute}>
+                <Text style={[styles.routeClearText, { color: theme.textPrimary }]}>✕</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -542,9 +563,9 @@ export default function MapScreen({ navigation }) {
 
         {/* Route loading spinner */}
         {routeLoading && (
-          <View style={styles.routeLoading}>
+          <View style={[styles.routeLoading, { backgroundColor: theme.dark ? 'rgba(13,27,42,0.97)' : 'rgba(255,255,255,0.97)' }]}>
             <ActivityIndicator color={colors.btnPrimary} />
-            <Text style={styles.routeLoadingText}>Getting route…</Text>
+            <Text style={[styles.routeLoadingText, { color: theme.textPrimary }]}>Getting route…</Text>
           </View>
         )}
 
@@ -554,30 +575,34 @@ export default function MapScreen({ navigation }) {
         </TouchableOpacity>
 
         <View style={styles.zoomControls}>
-          <TouchableOpacity style={styles.zoomBtn} onPress={() => zoom('in')} activeOpacity={0.8}>
-            <Text style={styles.zoomText}>+</Text>
+          <TouchableOpacity
+            style={[styles.zoomBtn, { backgroundColor: theme.dark ? 'rgba(27,42,74,0.95)' : 'rgba(255,255,255,0.96)' }]}
+            onPress={() => zoom('in')} activeOpacity={0.8}>
+            <Text style={[styles.zoomText, { color: theme.textPrimary }]}>+</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.zoomBtn} onPress={() => zoom('out')} activeOpacity={0.8}>
-            <Text style={styles.zoomText}>−</Text>
+          <TouchableOpacity
+            style={[styles.zoomBtn, { backgroundColor: theme.dark ? 'rgba(27,42,74,0.95)' : 'rgba(255,255,255,0.96)' }]}
+            onPress={() => zoom('out')} activeOpacity={0.8}>
+            <Text style={[styles.zoomText, { color: theme.textPrimary }]}>−</Text>
           </TouchableOpacity>
         </View>
 
         {/* Layer panel */}
-        <View style={styles.panel}>
-          <Text style={styles.panelTitle}>Layers</Text>
+        <View style={[styles.panel, { backgroundColor: theme.dark ? 'rgba(13,27,42,0.97)' : 'rgba(255,255,255,0.97)' }]}>
+          <Text style={[styles.panelTitle, { color: theme.textPrimary }]}>Layers</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
             {ALL_LAYERS.map(cfg => {
               const on = active[cfg.key];
               const dotColor = cfg.stroke || cfg.color;
               return (
                 <TouchableOpacity key={cfg.key}
-                  style={[styles.chip, on && { backgroundColor: dotColor, borderColor: dotColor }]}
+                  style={[styles.chip, { borderColor: theme.border, backgroundColor: theme.card }, on && { backgroundColor: dotColor, borderColor: dotColor }]}
                   onPress={() => toggle(cfg.key)} activeOpacity={0.8}>
                   {'emoji' in cfg
                     ? <Text style={styles.chipEmoji}>{cfg.emoji}</Text>
                     : <View style={[styles.chipDot, { backgroundColor: on ? colors.white : dotColor }]} />
                   }
-                  <Text style={[styles.chipText, on && styles.chipTextOn]}>{cfg.label}</Text>
+                  <Text style={[styles.chipText, { color: theme.textSecondary }, on && styles.chipTextOn]}>{cfg.label}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -594,16 +619,16 @@ export default function MapScreen({ navigation }) {
         onRequestClose={() => { setArrivalModal(null); clearRoute(); }}
       >
         <View style={styles.arrivalOverlay}>
-          <View style={styles.arrivalCard}>
+          <View style={[styles.arrivalCard, { backgroundColor: theme.card }]}>
             {/* Animated checkmark area */}
             <View style={styles.arrivalIconRing}>
               <Text style={styles.arrivalCheckmark}>✓</Text>
             </View>
 
-            <Text style={styles.arrivalTitle}>You have arrived!</Text>
+            <Text style={[styles.arrivalTitle, { color: theme.textPrimary }]}>You have arrived!</Text>
             <Text style={styles.arrivalEmoji}>{arrivalModal?.emoji}</Text>
             <Text style={styles.arrivalDest}>{arrivalModal?.label}</Text>
-            <Text style={styles.arrivalSub}>
+            <Text style={[styles.arrivalSub, { color: theme.textSecondary }]}>
               You have successfully reached your destination.{'\n'}
               Stay safe and be aware of your surroundings.
             </Text>

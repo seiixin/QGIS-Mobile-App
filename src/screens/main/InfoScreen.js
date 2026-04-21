@@ -4,13 +4,18 @@ import {
   StatusBar, ActivityIndicator, Animated,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Speech from 'expo-speech';
 import { useFocusEffect } from '@react-navigation/native';
 import AppLayout from '../../components/layout/AppLayout';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { apiRequest } from '../../lib/apiClient';
+import { logActivity } from '../../lib/activityStore';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
+import { useTypography } from '../../hooks/useTypography';
+import { useTranslation } from '../../hooks/useTranslation';
 
 const STORAGE_KEY_PREFIX = 'checklist_progress_';
 const PENDING_SYNC_KEY   = 'checklist_pending_sync_';
@@ -60,8 +65,58 @@ const FALLBACK_ITEMS = {
 
 
 
-// ── Animated accordion ────────────────────────────────────────────────────────
-function AccordionItem({ section, entranceAnim }) {
+// ── TTS helper ────────────────────────────────────────────────────────────────
+const TTS_LANG = { English: 'en-US', Tagalog: 'fil-PH', Kapampangan: 'fil-PH' };
+
+function ListenButton({ text, language, small = false }) {
+  const theme = useTheme();
+  const t = useTypography();
+  const { t: tr } = useTranslation();
+  const [speaking, setSpeaking] = useState(false);
+
+  const handlePress = async () => {
+    if (speaking) {
+      await Speech.stop();
+      setSpeaking(false);
+      return;
+    }
+    setSpeaking(true);
+    Speech.speak(text, {
+      language: TTS_LANG[language] || 'en-US',
+      rate: 0.9,
+      onDone: () => setSpeaking(false),
+      onStopped: () => setSpeaking(false),
+      onError: () => setSpeaking(false),
+    });
+  };
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.listenBtn,
+        small && styles.listenBtnSmall,
+        speaking && { backgroundColor: theme.accent },
+        !speaking && { backgroundColor: theme.dark ? 'rgba(255,255,255,0.1)' : 'rgba(27,42,74,0.08)' },
+      ]}
+      onPress={handlePress}
+      activeOpacity={0.75}
+    >
+      <Text style={[styles.listenIcon, { fontSize: small ? 12 : 14 }]}>
+        {speaking ? '⏹' : '🔊'}
+      </Text>
+      <Text style={[
+        styles.listenLabel,
+        { fontSize: small ? t.bodySmall.fontSize - 1 : t.bodySmall.fontSize },
+        { color: speaking ? '#fff' : theme.textSecondary },
+      ]}>
+        {speaking ? tr('Stop') : tr('Listen')}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+function AccordionItem({ section, entranceAnim, language }) {
+  const theme = useTheme();
+  const t = useTypography();
   const [expanded, setExpanded] = useState(false);
   const chevronAnim = useRef(new Animated.Value(0)).current;
   const bodyAnim    = useRef(new Animated.Value(0)).current;
@@ -91,20 +146,21 @@ function AccordionItem({ section, entranceAnim }) {
   } : undefined;
 
   return (
-    <Animated.View style={[styles.accordion, cardStyle]}>
+    <Animated.View style={[styles.accordion, { backgroundColor: theme.card }, cardStyle]}>
       <TouchableOpacity style={styles.accordionHeader} onPress={toggle} activeOpacity={0.8}>
-        <View style={styles.accordionIconBg}>
+        <View style={[styles.accordionIconBg, { backgroundColor: theme.bg }]}>
           <Text style={{ fontSize: 14 }}>{section.emoji}</Text>
         </View>
-        <Text style={styles.accordionTitle}>{section.title}</Text>
-        <Animated.Text style={[styles.chevron, { transform: [{ rotate }] }]}>▼</Animated.Text>
+        <Text style={[styles.accordionTitle, { color: theme.textPrimary, fontSize: t.h4.fontSize }]}>{section.title}</Text>
+        <Animated.Text style={[styles.chevron, { transform: [{ rotate }], color: theme.textMuted }]}>▼</Animated.Text>
       </TouchableOpacity>
       {bodyMounted && (
-        <Animated.View style={[styles.accordionBody, { opacity: bodyOpacity, transform: [{ translateY: bodySlide }] }]}>
+        <Animated.View style={[styles.accordionBody, { opacity: bodyOpacity, transform: [{ translateY: bodySlide }], borderTopColor: theme.border }]}>
           {section.content.map((item, i) => (
             <View key={i} style={styles.contentItem}>
-              <Text style={styles.contentHeading}>{item.heading}</Text>
-              <Text style={styles.contentBody}>{item.body}</Text>
+              <Text style={[styles.contentHeading, { fontSize: t.label.fontSize }]}>{item.heading}</Text>
+              <Text style={[styles.contentBody, { color: theme.textSecondary, fontSize: t.body.fontSize }]}>{item.body}</Text>
+              <ListenButton text={`${item.heading}. ${item.body}`} language={language} />
             </View>
           ))}
         </Animated.View>
@@ -114,7 +170,9 @@ function AccordionItem({ section, entranceAnim }) {
 }
 
 // ── Animated checklist item ───────────────────────────────────────────────────
-function CheckItem({ text, checked, onToggle }) {
+function CheckItem({ text, checked, onToggle, language }) {
+  const theme = useTheme();
+  const t = useTypography();
   const scaleAnim = useRef(new Animated.Value(checked ? 1 : 0)).current;
 
   const handleToggle = () => {
@@ -131,13 +189,14 @@ function CheckItem({ text, checked, onToggle }) {
   };
 
   return (
-    <TouchableOpacity style={styles.checkItem} onPress={handleToggle} activeOpacity={0.7}>
-      <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
+    <TouchableOpacity style={[styles.checkItem, { borderTopColor: theme.border }]} onPress={handleToggle} activeOpacity={0.7}>
+      <View style={[styles.checkbox, { borderColor: theme.border }, checked && styles.checkboxChecked]}>
         {checked && (
           <Animated.Text style={[styles.checkmark, { transform: [{ scale: scaleAnim }] }]}>✓</Animated.Text>
         )}
       </View>
-      <Text style={[styles.checkText, checked && styles.checkTextDone]}>{text}</Text>
+      <Text style={[styles.checkText, { color: theme.textPrimary, fontSize: t.body.fontSize }, checked && styles.checkTextDone]}>{text}</Text>
+      <ListenButton text={text} language={language} small />
     </TouchableOpacity>
   );
 }
@@ -146,6 +205,9 @@ function CheckItem({ text, checked, onToggle }) {
 export default function InfoScreen({ navigation }) {
   const { token, settings, updateSettings } = useAuth();
   const { isOnline } = useNetworkStatus();
+  const theme = useTheme();
+  const t = useTypography();
+  const { t: tr } = useTranslation();
   const [language, setLanguage] = useState(settings.language || 'English');
   const [entries,  setEntries]  = useState([]);
   const [loading,  setLoading]  = useState(true);
@@ -154,6 +216,7 @@ export default function InfoScreen({ navigation }) {
   const [checked,   setChecked]   = useState({});
   const [checkLoading, setCheckLoading] = useState(false);
   const [checklistItems, setChecklistItems] = useState(FALLBACK_ITEMS);
+  const [pageSpeaking, setPageSpeaking] = useState(false);
 
   const tabAnim         = useRef(new Animated.Value(0)).current;
   const contentFadeAnim = useRef(new Animated.Value(1)).current;
@@ -295,6 +358,31 @@ export default function InfoScreen({ navigation }) {
       : [{ id: 'all', title: 'Earthquake Information', emoji: '📖', content: entries.map(e => ({ heading: e.title, body: e.content })) }];
   }, [entries]);
 
+  const infoNarrationText = useMemo(() => (
+    sections
+      .flatMap((section) => [
+        section.title,
+        ...section.content.map((item) => `${item.heading}. ${item.body}`),
+      ])
+      .join('. ')
+  ), [sections]);
+
+  const checklistNarrationText = useMemo(() => {
+    const beforeText = checklistItems.before.map((item) =>
+      `${checked[item.id] ? 'Completed' : 'Pending'}. ${item.label}`
+    );
+    const afterText = checklistItems.after.map((item) =>
+      `${checked[item.id] ? 'Completed' : 'Pending'}. ${item.label}`
+    );
+
+    return [
+      'Before an earthquake checklist.',
+      ...beforeText,
+      'After an earthquake checklist.',
+      ...afterText,
+    ].join('. ');
+  }, [checklistItems, checked]);
+
   // Staggered entrance animation when sections load
   useEffect(() => {
     cardAnims.current = sections.map(() => new Animated.Value(0));
@@ -303,7 +391,34 @@ export default function InfoScreen({ navigation }) {
     )).start();
   }, [sections.length]);
 
+  useEffect(() => () => {
+    Speech.stop();
+  }, []);
+
+  const handleNarration = async (text) => {
+    if (!text) return;
+
+    if (pageSpeaking) {
+      await Speech.stop();
+      setPageSpeaking(false);
+      return;
+    }
+
+    setPageSpeaking(true);
+    Speech.speak(text, {
+      language: TTS_LANG[language] || 'en-US',
+      rate: 0.9,
+      onDone: () => setPageSpeaking(false),
+      onStopped: () => setPageSpeaking(false),
+      onError: () => setPageSpeaking(false),
+    });
+  };
+
   const switchTab = (tab) => {
+    if (pageSpeaking) {
+      Speech.stop();
+      setPageSpeaking(false);
+    }
     Animated.timing(contentFadeAnim, { toValue: 0, duration: 120, useNativeDriver: true }).start(() => {
       setActiveTab(tab);
       Animated.timing(contentFadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }).start();
@@ -330,21 +445,30 @@ export default function InfoScreen({ navigation }) {
       <StatusBar barStyle="light-content" backgroundColor="#1B2A4A" />
 
       <View style={styles.heroBanner}>
-        <Text style={styles.heroEyebrow}>Earthquake info</Text>
+        <Text style={[styles.heroEyebrow, { fontSize: t.bodySmall.fontSize }]}>{tr('Earthquake info')}</Text>
         <View style={styles.heroRow}>
-          <Text style={styles.heroTitle}>Readable guidance with multilingual support</Text>
-          <View style={styles.heroIcon}><Text style={{ fontSize: 18 }}>🔊</Text></View>
+          <Text style={[styles.heroTitle, { fontSize: t.h3.fontSize }]}>{tr('Readable guidance with multilingual support')}</Text>
+          <TouchableOpacity
+            style={[styles.heroIcon, pageSpeaking && styles.heroIconActive]}
+            onPress={() => handleNarration(activeTab === 'info' ? infoNarrationText : checklistNarrationText)}
+            activeOpacity={0.8}
+          >
+            <Text style={{ fontSize: 18 }}>{pageSpeaking ? '⏹' : '🔊'}</Text>
+          </TouchableOpacity>
         </View>
+        <Text style={[styles.heroVoiceHint, { fontSize: t.bodySmall.fontSize }]}>
+          {pageSpeaking ? tr('Stop') : tr('Listen')}
+        </Text>
       </View>
 
       {/* Animated sliding tab */}
-      <View style={styles.tabContainer}>
+      <View style={[styles.tabContainer, { backgroundColor: theme.card }]}>
         <Animated.View style={[styles.tabIndicator, { left: indicatorLeft }]} />
         <TouchableOpacity style={styles.tabBtn} onPress={() => switchTab('info')} activeOpacity={0.8}>
-          <Text style={[styles.tabBtnText, activeTab === 'info' && styles.tabBtnTextActive]}>ℹ️  Info</Text>
+          <Text style={[styles.tabBtnText, { color: theme.textSecondary, fontSize: t.label.fontSize }, activeTab === 'info' && styles.tabBtnTextActive]}>{tr('ℹ️  Info')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabBtn} onPress={() => switchTab('checklist')} activeOpacity={0.8}>
-          <Text style={[styles.tabBtnText, activeTab === 'checklist' && styles.tabBtnTextActive]}>✅  Checklist</Text>
+          <Text style={[styles.tabBtnText, { color: theme.textSecondary, fontSize: t.label.fontSize }, activeTab === 'checklist' && styles.tabBtnTextActive]}>{tr('✅  Checklist')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -352,9 +476,9 @@ export default function InfoScreen({ navigation }) {
 
         {/* ── INFO TAB ── */}
         {activeTab === 'info' && (
-          <ScrollView style={styles.bg} contentContainerStyle={styles.scroll}>
+          <ScrollView style={[styles.bg, { backgroundColor: theme.bg }]} contentContainerStyle={styles.scroll}>
             {/* Animated language selector */}
-            <View style={styles.langContainer}>
+            <View style={[styles.langContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
               <Animated.View style={[styles.langIndicator, {
                 left: langAnim.interpolate({
                   inputRange: [0, 1, 2],
@@ -369,7 +493,7 @@ export default function InfoScreen({ navigation }) {
                   disabled={loading}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.langBtnText, language === lang && styles.langBtnTextActive]}>
+                  <Text style={[styles.langBtnText, { color: theme.textSecondary, fontSize: t.bodySmall.fontSize }, language === lang && styles.langBtnTextActive]}>
                     {lang}
                   </Text>
                 </TouchableOpacity>
@@ -377,56 +501,84 @@ export default function InfoScreen({ navigation }) {
             </View>
 
             {loading && <ActivityIndicator color={colors.btnPrimary} style={styles.loader} />}
-            {!loading && error ? <Text style={styles.statusText}>{error}</Text> : null}
+            {!loading && error ? <Text style={[styles.statusText, { color: theme.textSecondary, fontSize: t.body.fontSize }]}>{error}</Text> : null}
             {!loading && !error && entries.length === 0 && (
-              <Text style={styles.statusText}>No information available for this language yet.</Text>
+              <Text style={[styles.statusText, { color: theme.textSecondary, fontSize: t.body.fontSize }]}>{tr('No information available for this language yet.')}</Text>
             )}
             {sections.map((section, i) => (
-              <AccordionItem key={section.id} section={section} entranceAnim={cardAnims.current[i]} />
+              <AccordionItem key={section.id} section={section} entranceAnim={cardAnims.current[i]} language={language} />
             ))}
           </ScrollView>
         )}
 
         {/* ── CHECKLIST TAB ── */}
         {activeTab === 'checklist' && (
-          <ScrollView style={styles.bg} contentContainerStyle={styles.scroll}>
-            <View style={styles.checkSection}>
+          <ScrollView style={[styles.bg, { backgroundColor: theme.bg }]} contentContainerStyle={styles.scroll}>
+            <TouchableOpacity
+              style={[styles.narrationCard, { backgroundColor: theme.card, borderColor: theme.border }]}
+              onPress={() => handleNarration(checklistNarrationText)}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.narrationIcon, { backgroundColor: pageSpeaking ? theme.accent : theme.bg }]}>
+                <Text style={styles.narrationIconText}>{pageSpeaking ? '⏹' : '🔊'}</Text>
+              </View>
+              <View style={styles.narrationContent}>
+                <Text style={[styles.narrationTitle, { color: theme.textPrimary, fontSize: t.h4.fontSize }]}>
+                  Checklist voice support
+                </Text>
+                <Text style={[styles.narrationBody, { color: theme.textSecondary, fontSize: t.bodySmall.fontSize }]}>
+                  {pageSpeaking
+                    ? 'Stop the current checklist narration.'
+                    : 'Read the full checklist aloud in your selected language.'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <View style={[styles.checkSection, { backgroundColor: theme.card }]}>
               <View style={[styles.checkSectionHeader, { backgroundColor: '#1B2A4A' }]}>
-                <Text style={styles.checkSectionTitle}>⚠️  To-Do Before an Earthquake</Text>
+                <Text style={[styles.checkSectionTitle, { fontSize: t.label.fontSize }]}>{tr('⚠️  To-Do Before an Earthquake')}</Text>
               </View>
               {checkLoading && <ActivityIndicator color={colors.btnPrimary} style={{ margin: 12 }} />}
               {checklistItems.before.map(item => (
                 <CheckItem key={item.id} text={item.label}
                   checked={Boolean(checked[item.id])}
+                  language={language}
                   onToggle={() => {
                     const next = { ...checked, [item.id]: !checked[item.id] };
                     setChecked(next);
                     saveProgress(next);
+                    if (!checked[item.id]) {
+                      logActivity({ type: 'checklist', label: 'Checklist item checked', sub: item.label });
+                    }
                   }} />
               ))}
             </View>
 
-            <View style={styles.checkSection}>
+            <View style={[styles.checkSection, { backgroundColor: theme.card }]}>
               <View style={[styles.checkSectionHeader, { backgroundColor: '#C0392B' }]}>
-                <Text style={styles.checkSectionTitle}>🔴  To-Do After an Earthquake</Text>
+                <Text style={[styles.checkSectionTitle, { fontSize: t.label.fontSize }]}>{tr('🔴  To-Do After an Earthquake')}</Text>
               </View>
               {checklistItems.after.map(item => (
                 <CheckItem key={item.id} text={item.label}
                   checked={Boolean(checked[item.id])}
+                  language={language}
                   onToggle={() => {
                     const next = { ...checked, [item.id]: !checked[item.id] };
                     setChecked(next);
                     saveProgress(next);
+                    if (!checked[item.id]) {
+                      logActivity({ type: 'checklist', label: 'Checklist item checked', sub: item.label });
+                    }
                   }} />
               ))}
             </View>
 
             <View style={styles.progressCard}>
-              <Text style={styles.progressLabel}>Preparedness: {pct}%</Text>
+              <Text style={[styles.progressLabel, { fontSize: t.h3.fontSize }]}>Preparedness: {pct}%</Text>
               <View style={styles.progressBar}>
                 <Animated.View style={[styles.progressFill, { width: `${pct}%` }]} />
               </View>
-              <Text style={styles.progressSub}>{done} of {total} items completed</Text>
+              <Text style={[styles.progressSub, { fontSize: t.bodySmall.fontSize }]}>{done} {tr('of')} {total} {tr('items completed')}</Text>
             </View>
           </ScrollView>
         )}
@@ -449,6 +601,12 @@ const styles = StyleSheet.create({
     width: 44, height: 44, borderRadius: 22,
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center', justifyContent: 'center',
+  },
+  heroIconActive: { backgroundColor: '#3B4FE0' },
+  heroVoiceHint: {
+    ...typography.bodySmall,
+    color: 'rgba(255,255,255,0.72)',
+    marginTop: 10,
   },
 
   tabContainer: {
@@ -507,6 +665,39 @@ const styles = StyleSheet.create({
   contentHeading: { ...typography.label, color: colors.textAccent, marginBottom: 4 },
   contentBody: { ...typography.body, color: colors.textMid, lineHeight: 22 },
 
+  listenBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    alignSelf: 'flex-start',
+    marginTop: 8, paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 20,
+  },
+  listenBtnSmall: {
+    paddingHorizontal: 8, paddingVertical: 4, marginTop: 0, marginLeft: 6,
+  },
+  listenIcon: { fontSize: 14 },
+  listenLabel: { fontWeight: '600' },
+
+  narrationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+  },
+  narrationIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  narrationIconText: { fontSize: 16 },
+  narrationContent: { flex: 1 },
+  narrationTitle: { ...typography.h4, marginBottom: 4 },
+  narrationBody: { ...typography.bodySmall, lineHeight: 18 },
+
   checkSection: {
     backgroundColor: colors.white, borderRadius: 14,
     marginBottom: 16, overflow: 'hidden', elevation: 1,
@@ -514,9 +705,9 @@ const styles = StyleSheet.create({
   checkSectionHeader: { paddingHorizontal: 16, paddingVertical: 12 },
   checkSectionTitle: { ...typography.label, color: colors.white },
   checkItem: {
-    flexDirection: 'row', alignItems: 'flex-start',
+    flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 12,
-    borderTopWidth: 1, borderTopColor: colors.inputBorder, gap: 12,
+    borderTopWidth: 1, borderTopColor: colors.inputBorder, gap: 10,
   },
   checkbox: {
     width: 22, height: 22, borderRadius: 6,

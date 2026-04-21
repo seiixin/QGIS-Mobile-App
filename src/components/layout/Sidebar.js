@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated,
-  Dimensions, TouchableWithoutFeedback, Image,
+  Dimensions, TouchableWithoutFeedback, Image, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
@@ -10,10 +10,20 @@ import { typography } from '../../theme/typography';
 const { width } = Dimensions.get('window');
 const SIDEBAR_WIDTH = width * 0.72;
 
-const menuItems = [
-  { icon: 'home',          label: 'Dashboard', screen: 'Dashboard' },
-  { icon: 'settings',      label: 'Settings',  screen: 'Settings'  },
-  { icon: 'person-circle', label: 'Profile',   screen: 'Profile'   },
+const NAV_SECTIONS = [
+  {
+    title: 'Main',
+    items: [
+      { icon: 'home-outline', label: 'Dashboard', screen: 'Dashboard' },
+    ],
+  },
+  {
+    title: 'Account',
+    items: [
+      { icon: 'person-circle-outline', label: 'Profile',  screen: 'Profile'  },
+      { icon: 'settings-outline',      label: 'Settings', screen: 'Settings' },
+    ],
+  },
 ];
 
 export default function Sidebar({ visible, onClose, navigation, user, onLogout }) {
@@ -50,9 +60,15 @@ export default function Sidebar({ visible, onClose, navigation, user, onLogout }
     }
   }, [visible]);
 
-  const handleNavigate = (screen) => {
+  const handleNavigate = (screen, tab) => {
     onClose();
-    setTimeout(() => navigation.navigate(screen), 260);
+    setTimeout(() => {
+      if (tab) {
+        navigation.navigate(screen, { screen: tab });
+      } else {
+        navigation.navigate(screen);
+      }
+    }, 260);
   };
 
   if (!visible && slideAnim._value === -SIDEBAR_WIDTH) return null;
@@ -81,20 +97,28 @@ export default function Sidebar({ visible, onClose, navigation, user, onLogout }
 
         <View style={styles.divider} />
 
-        {/* Menu items */}
-        <View style={styles.menuList}>
-          {menuItems.map((item) => (
-            <TouchableOpacity
-              key={item.screen}
-              style={styles.menuItem}
-              onPress={() => handleNavigate(item.screen)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name={item.icon} size={22} color={colors.white} />
-              <Text style={styles.menuItemLabel}>{item.label}</Text>
-            </TouchableOpacity>
+        {/* Nav sections */}
+        <ScrollView style={styles.menuScroll} showsVerticalScrollIndicator={false}>
+          {NAV_SECTIONS.map((section, si) => (
+            <View key={section.title}>
+              {si > 0 && <View style={styles.sectionDivider} />}
+              <Text style={styles.sectionLabel}>{section.title.toUpperCase()}</Text>
+              {section.items.map((item) => (
+                <TouchableOpacity
+                  key={item.label}
+                  style={styles.menuItem}
+                  onPress={() => handleNavigate(item.screen, item.tab)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.menuIconWrap}>
+                    <Ionicons name={item.icon} size={20} color="rgba(255,255,255,0.85)" />
+                  </View>
+                  <Text style={styles.menuItemLabel}>{item.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           ))}
-        </View>
+        </ScrollView>
 
         {/* Footer */}
         <View style={styles.drawerFooter}>
@@ -104,7 +128,7 @@ export default function Sidebar({ visible, onClose, navigation, user, onLogout }
             onPress={async () => {
               onClose();
               await onLogout();
-              setTimeout(() => navigation.replace('Auth'), 260);
+              setTimeout(() => navigation.navigate('Auth'), 260);
             }}
             activeOpacity={0.85}
           >
@@ -137,6 +161,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 4, height: 0 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
+    flexDirection: 'column',
   },
 
   drawerHeader: {
@@ -165,26 +190,47 @@ const styles = StyleSheet.create({
     marginHorizontal: 0,
   },
 
-  menuList: {
-    paddingTop: 16,
+  menuScroll: {
+    flex: 1,
     paddingHorizontal: 12,
+    paddingTop: 8,
+  },  sectionDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginHorizontal: 4,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  sectionLabel: {
+    ...typography.bodySmall,
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
     borderRadius: 12,
-    gap: 16,
-    marginBottom: 4,
+    gap: 14,
+    marginBottom: 2,
   },
-  menuItemLabel: { ...typography.h4, color: colors.white },
+  menuIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuItemLabel: { ...typography.h4, color: colors.white, fontWeight: '500' },
 
   drawerFooter: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     paddingBottom: 32,
   },
   logoutBtn: {
