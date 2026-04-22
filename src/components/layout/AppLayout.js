@@ -46,13 +46,16 @@ export default function AppLayout({ children, navigation }) {
 
   // Detect if we're on a stack screen (Dashboard / Profile / Settings)
   const routeName = useNavigationState((state) => {
-    if (!state) return null;
-    // Walk down to the active leaf route name
-    let s = state;
-    while (s?.routes?.[s.index]?.state) {
-      s = s.routes[s.index].state;
+    try {
+      if (!state) return null;
+      let s = state;
+      while (s?.routes?.[s.index]?.state) {
+        s = s.routes[s.index].state;
+      }
+      return s?.routes?.[s?.index ?? 0]?.name ?? null;
+    } catch {
+      return null;
     }
-    return s?.routes?.[s.index]?.name ?? null;
   });
 
   const showCustomBar = STACK_SCREENS.includes(routeName);
