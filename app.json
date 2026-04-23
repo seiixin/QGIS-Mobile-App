@@ -13,7 +13,11 @@
       "backgroundColor": "#1B2A4A"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.seixin28.qgismobileapp",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -22,8 +26,6 @@
       },
       "package": "com.seixin28.qgismobileapp",
       "permissions": [
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
       ]
@@ -35,16 +37,13 @@
       "expo-font",
       "expo-location"
     ],
-    "extra": {
-      "eas": {
-        "projectId": "1ef285ce-59e2-4284-ab94-61b151255498"
-      }
-    },
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "updates": {
-      "url": "https://u.expo.dev/1ef285ce-59e2-4284-ab94-61b151255498"
+    "extra": {
+      "eas": {
+        "projectId": "2f00a4f0-544e-43bd-82d2-7d984015f25e"
+      }
     }
   }
 }

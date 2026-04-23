@@ -1,18 +1,12 @@
-import React, { useEffect, useRef, useState, Component } from 'react';
-import {
-  View, Text, StyleSheet, TouchableOpacity,
-  StatusBar, ScrollView, Alert, ActivityIndicator, Modal,
-} from 'react-native';
-import MapView, { Polyline, Polygon, Marker, Circle, PROVIDER_DEFAULT } from 'react-native-maps';
+import React, { useRef, useState, useEffect } from 'react';
+import { View, StyleSheet, StatusBar, ActivityIndicator, Text } from 'react-native';
+import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
-import { useAuth } from '../../context/AuthContext';
 import AppLayout from '../../components/layout/AppLayout';
-import { useTheme } from '../../context/ThemeContext';
 import { colors } from '../../theme/colors';
-import { typography } from '../../theme/typography';
 import { resolveApiUrl } from '../../config/api';
-import { useVoiceNavigation } from '../../hooks/useVoiceNavigation';
 import { logActivity } from '../../lib/activityStore';
+import { useAuth } from '../../context/AuthContext';
 
 import PoliticalBoundary from '../../data/geojson/Political_Boundary.json';
 import GroundShaking     from '../../data/geojson/Ground_Shaking_Intensity.json';
@@ -29,74 +23,104 @@ import Markets           from '../../data/geojson/Markets.json';
 import Banks             from '../../data/geojson/Banks.json';
 import Restaurants       from '../../data/geojson/Restaurants.json';
 
-// ── Error boundary ────────────────────────────────────────────────────────────
-class MapErrorBoundary extends Component {
-  state = { hasError: false, error: null };
-  static getDerivedStateFromError(e) { return { hasError: true, error: e }; }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, backgroundColor: '#0D1B2A' }}>
-          <Text style={{ fontSize: 40, marginBottom: 12 }}>🗺️</Text>
-          <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 8, textAlign: 'center' }}>Map unavailable</Text>
-          <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, textAlign: 'center' }}>
-            {String(this.state.error?.message || '')}
-          </Text>
-        </View>
-      );
-    }
-    return this.props.children;
-  }
-}
+function buildMapHTML(apiBase, authToken) {
+  const gj = JSON.stringify({
+    boundary: PoliticalBoundary, shaking: GroundShaking,
+    evac: EvacCenters, open: OpenSpaces,
+    safe: RoadsSafe, average: RoadsAverage, poor: RoadsPoor, critical: RoadsCritical,
+    evac_pin: EvacPin, open_pin: OpenPin,
+    gas: GasStations, resto: Restaurants, markets: Markets, banks: Banks,
+  });
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function haversine(lat1, lng1, lat2, lng2) {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;font-family:-apple-system,sans-serif;overflow:hidden}
+#map{height:100vh;width:100vw}
+#panel{position:fixed;bottom:0;left:0;right:0;background:rgba(255,255,255,.97);border-radius:16px 16px 0 0;padding:10px 12px 16px;box-shadow:0 -4px 20px rgba(0,0,0,.12);z-index:1000}
+#panel h4{font-size:11px;font-weight:700;color:#888;margin-bottom:8px;padding-left:4px;letter-spacing:.8px}
+#chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
+#chips::-webkit-scrollbar{display:none}
+.chip{display:flex;align-items:center;gap:5px;border:1.5px solid #ddd;border-radius:20px;padding:5px 12px;white-space:nowrap;font-size:12px;color:#555;cursor:pointer;background:#fff;user-select:none}
+.chip.on{color:#fff;font-weight:700}
+.cdot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+#gbtn{position:fixed;top:16px;right:14px;width:48px;height:48px;border-radius:50%;background:#C0392B;border:none;font-size:22px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.3);z-index:1000;display:flex;align-items:center;justify-content:center}
+#zoom-wrap{position:fixed;right:14px;bottom:110px;z-index:1000;display:flex;flex-direction:column;gap:8px}
+.zbtn{width:44px;height:44px;border-radius:22px;background:rgba(255,255,255,.96);border:none;font-size:24px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.2);display:flex;align-items:center;justify-content:center;color:#1B2A4A}
+#rcard{position:fixed;top:16px;left:14px;right:70px;background:#1B2A4A;border-radius:14px;padding:12px 14px;z-index:1000;display:none;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+#rname{font-size:15px;font-weight:700}
+#rdist{font-size:12px;color:rgba(255,255,255,.65);margin-top:2px}
+#rcancel{position:absolute;top:10px;right:10px;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+#moverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;align-items:center;justify-content:center;padding:32px}
+#moverlay.show{display:flex}
+#mbox{background:#fff;border-radius:20px;padding:24px;max-width:360px;width:100%}
+#mbox h3{font-size:18px;margin-bottom:14px}
+#mbox p{font-size:14px;line-height:1.6;color:#333;margin-bottom:8px}
+#mclose{margin-top:16px;width:100%;padding:12px;background:#1B2A4A;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<button id="gbtn">🚨</button>
+<div id="zoom-wrap">
+  <button class="zbtn" id="zin">+</button>
+  <button class="zbtn" id="zout">−</button>
+</div>
+<div id="rcard"><div id="rname"></div><div id="rdist"></div><button id="rcancel">✕</button></div>
+<div id="panel"><h4>LAYERS</h4><div id="chips"></div></div>
+<div id="moverlay"><div id="mbox">
+<h3>🚨 Earthquake Safety</h3>
+<p>• Tap any marker (🟢 open space, 🏠 evac center, ⛽ gas, etc.) to get directions.</p>
+<p>• Prioritize GREEN open spaces during aftershocks.</p>
+<p>• Follow the colored route — 🟢 green = safe, 🟡 orange = average, 🔴 red = critical.</p>
+<p>• Tap the same marker again to clear the route.</p>
+<button id="mclose">Got it</button>
+</div></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const GJ = ${gj};
+const API_BASE = '${apiBase}';
+const AUTH_TOKEN = '${authToken || ''}';
 
-let ROAD_CONDITIONS = [];
-function initRoadConditions(safe, average, poor, critical) {
-  ROAD_CONDITIONS = [
-    { label: 'safe',     color: '#27AE60', data: safe     },
-    { label: 'average',  color: '#F39C12', data: average  },
-    { label: 'poor',     color: '#E67E22', data: poor     },
-    { label: 'critical', color: '#E74C3C', data: critical },
-  ];
-}
+// ── Map ───────────────────────────────────────────────────────────────────────
+const map = L.map('map',{zoomControl:false}).setView([14.9505,120.748],14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
 
+// ── Road condition data for colorizing route ──────────────────────────────────
+const ROAD_CONDITIONS = [
+  {label:'safe',    color:'#27AE60', data: GJ.safe},
+  {label:'average', color:'#F39C12', data: GJ.average},
+  {label:'poor',    color:'#E67E22', data: GJ.poor},
+  {label:'critical',color:'#E74C3C', data: GJ.critical},
+];
 const SNAP_THRESHOLD = 60;
-function distPointToSegment(pLat, pLng, aLat, aLng, bLat, bLng) {
-  const latScale = 111320;
-  const lngScale = 111320 * Math.cos(pLat * Math.PI / 180);
-  const px = pLng * lngScale, py = pLat * latScale;
-  const ax = aLng * lngScale, ay = aLat * latScale;
-  const bx = bLng * lngScale, by = bLat * latScale;
-  const dx = bx - ax, dy = by - ay;
-  const lenSq = dx * dx + dy * dy;
-  if (lenSq === 0) return Math.sqrt((px - ax) ** 2 + (py - ay) ** 2);
-  let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
-  t = Math.max(0, Math.min(1, t));
-  return Math.sqrt((px - (ax + t * dx)) ** 2 + (py - (ay + t * dy)) ** 2);
+
+function distPointToSegment(pLat,pLng,aLat,aLng,bLat,bLng){
+  const ls=111320, lsc=111320*Math.cos(pLat*Math.PI/180);
+  const px=pLng*lsc,py=pLat*ls,ax=aLng*lsc,ay=aLat*ls,bx=bLng*lsc,by=bLat*ls;
+  const dx=bx-ax,dy=by-ay,lenSq=dx*dx+dy*dy;
+  if(lenSq===0) return Math.sqrt((px-ax)**2+(py-ay)**2);
+  let t=((px-ax)*dx+(py-ay)*dy)/lenSq;
+  t=Math.max(0,Math.min(1,t));
+  return Math.sqrt((px-(ax+t*dx))**2+(py-(ay+t*dy))**2);
 }
 
-function classifyPoint(lat, lng, roadConditions) {
-  let best = null, bestDist = SNAP_THRESHOLD;
-  for (const rc of roadConditions) {
-    if (!rc.data) continue;
-    for (const feature of rc.data.features) {
-      const lines = feature.geometry.type === 'LineString' ? [feature.geometry.coordinates]
-        : feature.geometry.type === 'MultiLineString' ? feature.geometry.coordinates : [];
-      for (const line of lines) {
-        for (let i = 0; i < line.length - 1; i++) {
-          const [aLng, aLat] = line[i], [bLng, bLat] = line[i + 1];
-          const d = distPointToSegment(lat, lng, aLat, aLng, bLat, bLng);
-          if (d < bestDist) { bestDist = d; best = rc.color; }
+function classifyPoint(lat,lng){
+  let best=null,bestDist=SNAP_THRESHOLD;
+  for(const rc of ROAD_CONDITIONS){
+    for(const f of rc.data.features){
+      const lines=f.geometry.type==='LineString'?[f.geometry.coordinates]
+        :f.geometry.type==='MultiLineString'?f.geometry.coordinates:[];
+      for(const line of lines){
+        for(let i=0;i<line.length-1;i++){
+          const [aLng,aLat]=line[i],[bLng,bLat]=line[i+1];
+          const d=distPointToSegment(lat,lng,aLat,aLng,bLat,bLng);
+          if(d<bestDist){bestDist=d;best=rc.color;}
         }
       }
     }
@@ -104,372 +128,352 @@ function classifyPoint(lat, lng, roadConditions) {
   return best;
 }
 
-function colorizeRoute(path, roadConditions, fallbackColor) {
-  if (path.length < 2) return [{ coords: path, color: fallbackColor }];
-  const classified = path.map(pt => ({ pt, color: classifyPoint(pt.latitude, pt.longitude, roadConditions) || fallbackColor }));
-  const segments = [];
-  let current = [classified[0].pt], currentColor = classified[0].color;
-  for (let i = 1; i < classified.length; i++) {
-    const { pt, color } = classified[i];
-    if (color === currentColor) { current.push(pt); }
-    else { current.push(pt); segments.push({ coords: current, color: currentColor }); current = [pt]; currentColor = color; }
+function colorizeRoute(coords, fallback){
+  // coords: [[lng,lat],...] from API
+  if(coords.length<2) return [{latlngs:coords.map(([lng,lat])=>[lat,lng]),color:fallback}];
+  const classified=coords.map(([lng,lat])=>({ll:[lat,lng],color:classifyPoint(lat,lng)||fallback}));
+  const segs=[];
+  let cur=[classified[0].ll], curColor=classified[0].color;
+  for(let i=1;i<classified.length;i++){
+    const {ll,color}=classified[i];
+    if(color===curColor){cur.push(ll);}
+    else{cur.push(ll);segs.push({latlngs:cur,color:curColor});cur=[ll];curColor=color;}
   }
-  if (current.length > 1) segments.push({ coords: current, color: currentColor });
-  return segments;
+  if(cur.length>1) segs.push({latlngs:cur,color:curColor});
+  return segs;
 }
 
-async function getRoadRoute(fromLat, fromLng, toLat, toLng, token) {
-  try {
-    const url = resolveApiUrl(`/route?from_lat=${fromLat}&from_lng=${fromLng}&to_lat=${toLat}&to_lng=${toLng}`);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    const res = await fetch(url, { signal: controller.signal, headers: { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
-    clearTimeout(timeout);
-    const data = await res.json();
-    if (data.ok && data.coordinates?.length > 1) {
-      return { path: data.coordinates.map(([lng, lat]) => ({ latitude: lat, longitude: lng })), distanceM: data.distance, isFallback: false };
+// ── Layers ────────────────────────────────────────────────────────────────────
+const POLY=[
+  {key:'boundary',label:'Boundary',  color:'#1B2A4A',type:'line',opacity:1,  on:true, dash:'8,6'},
+  {key:'shaking', label:'Shaking',   color:'#C0392B',type:'fill',opacity:.4, on:false},
+  {key:'evac',    label:'Evac Areas',color:'#2980B9',type:'fill',opacity:.3, on:true},
+  {key:'open',    label:'Open Areas',color:'#27AE60',type:'fill',opacity:.3, on:true},
+  {key:'safe',    label:'Safe',      color:'#27AE60',type:'line',opacity:1,  on:true},
+  {key:'average', label:'Average',   color:'#F39C12',type:'line',opacity:1,  on:true},
+  {key:'poor',    label:'Poor',      color:'#E67E22',type:'line',opacity:1,  on:true},
+  {key:'critical',label:'Critical',  color:'#E74C3C',type:'line',opacity:1,  on:true},
+];
+const PTS=[
+  {key:'open_pin',label:'Open Spaces', emoji:'🟢',color:'#27AE60',on:true},
+  {key:'evac_pin',label:'Evac Centers',emoji:'🏠',color:'#2980B9',on:true},
+  {key:'gas',     label:'Gas',         emoji:'⛽',color:'#E67E22',on:true},
+  {key:'resto',   label:'Food',        emoji:'🍽️',color:'#C0392B',on:true},
+  {key:'markets', label:'Markets',     emoji:'🛒',color:'#8E44AD',on:true},
+  {key:'banks',   label:'Banks',       emoji:'🏦',color:'#2980B9',on:true},
+];
+
+const layers={}, state={};
+
+POLY.forEach(d=>{
+  const l=d.type==='fill'
+    ?L.geoJSON(GJ[d.key],{style:{color:d.color,fillColor:d.color,fillOpacity:d.opacity,weight:1,opacity:.7}})
+    :L.geoJSON(GJ[d.key],{style:{color:d.color,weight:2,opacity:d.opacity,dashArray:d.dash||null}});
+  layers[d.key]=l; state[d.key]=d.on;
+  if(d.on) l.addTo(map);
+});
+
+// ── User location — injected from React Native via postMessage ────────────────
+let userLat=14.9505, userLng=120.748, userDot=null, userCircle=null;
+let locationReceived=false;
+
+function updateUserDot(lat,lng){
+  userLat=lat; userLng=lng;
+  if(userDot) map.removeLayer(userDot);
+  if(userCircle) map.removeLayer(userCircle);
+  userCircle=L.circle([lat,lng],{radius:25,fillColor:'rgba(59,79,224,0.2)',color:'#3B4FE0',weight:2,fillOpacity:0.2}).addTo(map);
+  userDot=L.circleMarker([lat,lng],{radius:8,fillColor:'#3B4FE0',color:'#fff',weight:3,fillOpacity:1}).addTo(map);
+  if(!locationReceived){
+    locationReceived=true;
+    map.setView([lat,lng],15);
+  }
+
+  // ── Navigation progress check ─────────────────────────────────────────────
+  if(!activeDestDef || arrivedFlag) return;
+
+  const distToDest = haversine(lat,lng,activeDestLat,activeDestLng);
+  const remaining  = remainingDist(lat,lng);
+
+  // Arrival: within 20m
+  if(distToDest < 20){
+    arrivedFlag = true;
+    speak('You have arrived at your destination. '+activeDestDef.label);
+    // Show arrival banner
+    document.getElementById('rname').textContent = '✅ You have arrived!';
+    document.getElementById('rdist').textContent  = activeDestDef.emoji+' '+activeDestDef.label;
+    // Notify React Native for activity log
+    if(window.ReactNativeWebView){
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'arrived',
+        label: activeDestDef.label,
+        emoji: activeDestDef.emoji,
+      }));
     }
-  } catch (e) { console.warn('Route error:', e.message); }
-  return { path: [{ latitude: fromLat, longitude: fromLng }, { latitude: toLat, longitude: toLng }], distanceM: haversine(fromLat, fromLng, toLat, toLng), isFallback: true };
-}
+    return;
+  }
 
-function buildDestinations() {
-  const dests = [];
-  const add = (geojson, type, emoji, color) => geojson.features.forEach((f, i) => {
-    if (f.geometry.type !== 'Point') return;
-    const [lng, lat] = f.geometry.coordinates;
-    dests.push({ id: `${type}-${i}`, type, emoji, color, latitude: lat, longitude: lng });
+  // Distance announcements: 500m, 200m, 100m, 50m
+  [500,200,100,50].forEach(threshold=>{
+    const key='dist-'+threshold;
+    if(remaining<=threshold && remaining>threshold*0.5 && !announcedWaypoints.has(key)){
+      announcedWaypoints.add(key);
+      speak('In '+fmt(remaining)+', you will reach '+activeDestDef.label);
+    }
   });
-  add(OpenPin, 'open', '🟢', '#27AE60'); add(EvacPin, 'evac', '🏠', '#2980B9');
-  add(GasStations, 'gas', '⛽', '#E67E22'); add(Restaurants, 'food', '🍽️', '#C0392B');
-  add(Markets, 'market', '🛒', '#8E44AD'); add(Banks, 'bank', '🏦', '#2980B9');
-  return dests;
-}
-const ALL_DESTINATIONS = buildDestinations();
-
-const SAN_VICENTE_REGION = { latitude: 14.9505, longitude: 120.748, latitudeDelta: 0.025, longitudeDelta: 0.025 };
-
-const POINT_LAYERS = [
-  { key: 'open_pin', label: 'Open Spaces', emoji: '🟢', color: '#27AE60', size: 40, data: OpenPin,     defaultOn: true },
-  { key: 'evac_pin', label: 'Evac Centers',emoji: '🏠', color: '#2980B9', size: 32, data: EvacPin,     defaultOn: true },
-  { key: 'gas',      label: 'Gas',         emoji: '⛽', color: '#E67E22', size: 28, data: GasStations, defaultOn: true },
-  { key: 'resto',    label: 'Food',        emoji: '🍽️', color: '#C0392B', size: 28, data: Restaurants, defaultOn: true },
-  { key: 'markets',  label: 'Markets',     emoji: '🛒', color: '#8E44AD', size: 28, data: Markets,     defaultOn: true },
-  { key: 'banks',    label: 'Banks',       emoji: '🏦', color: '#2980B9', size: 28, data: Banks,       defaultOn: true },
-];
-
-const POLYGON_LAYERS = [
-  { key: 'boundary', label: 'Boundary',       stroke: '#1B2A4A', fill: 'rgba(0,0,0,0)',        data: PoliticalBoundary, defaultOn: true,  lineDash: [8, 6] },
-  { key: 'shaking',  label: 'Ground Shaking', stroke: '#C0392B', fill: 'rgba(192,57,43,0.4)',  data: GroundShaking,     defaultOn: false },
-  { key: 'evac',     label: 'Evac Areas',     stroke: '#2980B9', fill: 'rgba(41,128,185,0.3)', data: EvacCenters,       defaultOn: true  },
-  { key: 'open',     label: 'Open Areas',     stroke: '#27AE60', fill: 'rgba(39,174,96,0.3)',  data: OpenSpaces,        defaultOn: true  },
-  { key: 'safe',     label: 'Safe',           stroke: '#27AE60', fill: 'transparent',          data: RoadsSafe,         defaultOn: true  },
-  { key: 'average',  label: 'Average',        stroke: '#F39C12', fill: 'transparent',          data: RoadsAverage,      defaultOn: true  },
-  { key: 'poor',     label: 'Poor',           stroke: '#E67E22', fill: 'transparent',          data: RoadsPoor,         defaultOn: true  },
-  { key: 'critical', label: 'Critical',       stroke: '#E74C3C', fill: 'transparent',          data: RoadsCritical,     defaultOn: true  },
-];
-const ALL_LAYERS = [...POLYGON_LAYERS, ...POINT_LAYERS];
-
-const DARK_MAP_STYLE = [
-  { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1626' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#38414e' }] },
-];
-
-function coordsToLatLng(ring) { return ring.map(([lng, lat]) => ({ latitude: lat, longitude: lng })); }
-
-function renderPolygonFeature(feature, cfg, idx) {
-  const { type, coordinates } = feature.geometry;
-  if (!coordinates) return null;
-  const isLine = type === 'LineString' || type === 'MultiLineString';
-  const rings = type === 'Polygon' ? [coordinates] : type === 'MultiPolygon' ? coordinates
-    : type === 'LineString' ? [[coordinates]] : type === 'MultiLineString' ? [coordinates] : [];
-  return rings.flatMap((poly, pi) => poly.map((ring, ri) => {
-    const pts = coordsToLatLng(ring);
-    const key = `${cfg.key}-${idx}-${pi}-${ri}`;
-    if (isLine) return <Polyline key={key} coordinates={pts} strokeColor={cfg.stroke} strokeWidth={2} lineDashPattern={cfg.lineDash || null} />;
-    if (cfg.lineDash) return <Polyline key={key} coordinates={[...pts, pts[0]]} strokeColor={cfg.stroke} strokeWidth={2} lineDashPattern={cfg.lineDash} />;
-    return <Polygon key={key} coordinates={pts} strokeColor={cfg.stroke} fillColor={cfg.fill} strokeWidth={1.5} />;
-  }));
 }
 
-function PointMarker({ feature, cfg, idx, onPress, selectedDestId }) {
-  const [ready, setReady] = useState(false);
-  const { type, coordinates } = feature.geometry;
-  if (type !== 'Point' || !coordinates) return null;
-  const [lng, lat] = coordinates;
-  const size = cfg.size || 30;
-  const destId = `${cfg.key}-${idx}`;
-  const isSelected = selectedDestId === destId;
-  const opacity = selectedDestId !== null && !isSelected ? 0.25 : 1;
-  return (
-    <Marker key={destId} coordinate={{ latitude: lat, longitude: lng }} anchor={{ x: 0.5, y: 0.5 }}
-      tracksViewChanges={!ready} zIndex={isSelected ? 999 : 1}
-      onPress={(e) => { e.stopPropagation?.(); onPress && onPress(destId, lat, lng, cfg); }}>
-      <View onLayout={() => setReady(true)} style={{
-        width: size, height: size, borderRadius: size / 2, backgroundColor: cfg.color,
-        alignItems: 'center', justifyContent: 'center',
-        borderWidth: isSelected ? 3.5 : 2.5, borderColor: isSelected ? '#FFD700' : '#fff',
-        opacity, elevation: isSelected ? 8 : 4,
-      }}>
-        <Text style={{ fontSize: size * 0.45, lineHeight: size * 0.55 }}>{cfg.emoji}</Text>
-      </View>
-    </Marker>
-  );
+// React Native sends location via postMessage
+document.addEventListener('message', e => {
+  try {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'location') updateUserDot(msg.lat, msg.lng);
+  } catch {}
+});
+window.addEventListener('message', e => {
+  try {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'location') updateUserDot(msg.lat, msg.lng);
+  } catch {}
+});
+
+// ── Voice (Web Speech API) ────────────────────────────────────────────────────
+function speak(text){
+  if(!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  u.lang='en-US'; u.rate=0.9; u.pitch=1.0;
+  window.speechSynthesis.speak(u);
 }
 
-// ── Main screen ───────────────────────────────────────────────────────────────
-function MapScreenInner({ navigation }) {
-  const { token, settings } = useAuth();
-  const theme = useTheme();
-  const mapRef = useRef(null);
-  const regionRef = useRef(SAN_VICENTE_REGION);
+// ── Routing ───────────────────────────────────────────────────────────────────
+let routeLayers=[], selKey=null, activeDestDef=null, activeDestLat=null, activeDestLng=null;
+let routePath=[], announcedWaypoints=new Set(), arrivedFlag=false;
 
-  const { isNavigating: voiceActive, instruction: voiceInstruction, distRemaining: voiceDistRemaining,
-    arrived, startNavigation, stopNavigation: stopVoice } = useVoiceNavigation({ language: settings?.language || 'English' });
+function haversine(a,b,c,d){
+  const R=6371000,r=x=>x*Math.PI/180;
+  const x=Math.sin(r(c-a)/2)**2+Math.cos(r(a))*Math.cos(r(c))*Math.sin(r(d-b)/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+function fmt(m){return m>=1000?(m/1000).toFixed(1)+' km':Math.round(m)+' m'}
 
-  useEffect(() => { initRoadConditions(RoadsSafe, RoadsAverage, RoadsPoor, RoadsCritical); }, []);
+function remainingDist(fromLat,fromLng){
+  if(!routePath.length) return 0;
+  let minIdx=0, minD=Infinity;
+  routePath.forEach((p,i)=>{const d=haversine(fromLat,fromLng,p[0],p[1]);if(d<minD){minD=d;minIdx=i;}});
+  let d=0;
+  for(let i=minIdx;i<routePath.length-1;i++) d+=haversine(routePath[i][0],routePath[i][1],routePath[i+1][0],routePath[i+1][1]);
+  return d;
+}
 
-  const [active, setActive] = useState(() => { const s = {}; ALL_LAYERS.forEach(l => { s[l.key] = l.defaultOn; }); return s; });
-  const [userLocation,  setUserLocation]  = useState(null);
-  const [activeRoute,   setActiveRoute]   = useState(null);
-  const [colorSegments, setColorSegments] = useState([]);
-  const [routeLoading,  setRouteLoading]  = useState(false);
-  const [selectedDestId,setSelectedDestId]= useState(null);
-  const [arrivalModal,  setArrivalModal]  = useState(null);
+function clearRoute(){
+  routeLayers.forEach(l=>map.removeLayer(l)); routeLayers=[];
+  selKey=null; activeDestDef=null; activeDestLat=null; activeDestLng=null;
+  routePath=[]; announcedWaypoints=new Set(); arrivedFlag=false;
+  document.getElementById('rcard').style.display='none';
+  if(window.speechSynthesis) window.speechSynthesis.cancel();
+}
+
+async function doRoute(toLat,toLng,def){
+  clearRoute();
+  activeDestDef=def; activeDestLat=toLat; activeDestLng=toLng;
+  const dist=haversine(userLat,userLng,toLat,toLng);
+  let isFallback=true;
+
+  try{
+    const url=API_BASE+'/route?from_lat='+userLat+'&from_lng='+userLng+'&to_lat='+toLat+'&to_lng='+toLng;
+    const headers={'Accept':'application/json'};
+    if(AUTH_TOKEN) headers['Authorization']='Bearer '+AUTH_TOKEN;
+    const res=await fetch(url,{headers,signal:AbortSignal.timeout(10000)});
+    const data=await res.json();
+    if(data.ok && data.coordinates && data.coordinates.length>1){
+      isFallback=false;
+      routePath=data.coordinates.map(c=>[c[1],c[0]]); // [lat,lng]
+      const segs=colorizeRoute(data.coordinates, def.color);
+      segs.forEach(seg=>{
+        const l=L.polyline(seg.latlngs,{color:seg.color,weight:6,opacity:.9}).addTo(map);
+        routeLayers.push(l);
+      });
+      const lats=data.coordinates.map(c=>c[1]), lngs=data.coordinates.map(c=>c[0]);
+      map.fitBounds([[Math.min(...lats),Math.min(...lngs)],[Math.max(...lats),Math.max(...lngs)]],{padding:[60,60]});
+      document.getElementById('rdist').textContent=fmt(data.distance)+' via road';
+      speak('Starting navigation to '+def.label);
+    }
+  }catch(e){}
+
+  if(isFallback){
+    routePath=[[userLat,userLng],[toLat,toLng]];
+    const l=L.polyline([[userLat,userLng],[toLat,toLng]],{color:def.color,weight:5,opacity:.85,dashArray:'8,4'}).addTo(map);
+    routeLayers.push(l);
+    map.fitBounds([[userLat,userLng],[toLat,toLng]],{padding:[60,60]});
+    document.getElementById('rdist').textContent=fmt(dist)+' (straight line)';
+    speak('Navigating to '+def.label);
+  }
+
+  document.getElementById('rname').textContent=def.emoji+' '+def.label;
+  document.getElementById('rcard').style.display='block';
+}
+
+// ── Point markers ─────────────────────────────────────────────────────────────
+PTS.forEach(d=>{
+  const icon=L.divIcon({
+    html:'<div style="width:32px;height:32px;border-radius:50%;background:'+d.color+';display:flex;align-items:center;justify-content:center;border:2.5px solid #fff;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.3)">'+d.emoji+'</div>',
+    className:'',iconSize:[32,32],iconAnchor:[16,16]
+  });
+  const l=L.geoJSON(GJ[d.key],{
+    filter:f=>f.geometry.type==='Point',
+    pointToLayer:(f,ll)=>L.marker(ll,{icon}),
+  });
+  l.on('click',e=>{
+    const ll=e.latlng, k=d.key+ll.lat.toFixed(5)+ll.lng.toFixed(5);
+    if(selKey===k){clearRoute();return;}
+    selKey=k;
+    doRoute(ll.lat,ll.lng,d);
+  });
+  layers[d.key]=l; state[d.key]=d.on;
+  if(d.on) l.addTo(map);
+});
+
+// ── Zoom buttons ──────────────────────────────────────────────────────────────
+document.getElementById('zin').onclick=()=>map.zoomIn();
+document.getElementById('zout').onclick=()=>map.zoomOut();
+
+// ── Chips ─────────────────────────────────────────────────────────────────────
+const chips=document.getElementById('chips');
+[...POLY,...PTS].forEach(d=>{
+  const c=document.createElement('div');
+  c.className='chip'+(d.on?' on':'');
+  c.style.borderColor=d.on?d.color:'#ddd';
+  c.style.background=d.on?d.color:'#fff';
+  const dot=document.createElement('div');
+  if(d.emoji){dot.textContent=d.emoji;dot.style.fontSize='13px';}
+  else{dot.className='cdot';dot.style.background=d.on?'#fff':d.color;}
+  const lbl=document.createElement('span');lbl.textContent=d.label;
+  c.appendChild(dot);c.appendChild(lbl);
+  c.addEventListener('click',()=>{
+    const on=!state[d.key]; state[d.key]=on;
+    if(on) layers[d.key].addTo(map); else map.removeLayer(layers[d.key]);
+    c.className='chip'+(on?' on':'');
+    c.style.borderColor=on?d.color:'#ddd';
+    c.style.background=on?d.color:'#fff';
+    if(!d.emoji) dot.style.background=on?'#fff':d.color;
+  });
+  chips.appendChild(c);
+});
+
+// ── Guidance modal ────────────────────────────────────────────────────────────
+document.getElementById('gbtn').onclick=()=>document.getElementById('moverlay').classList.add('show');
+document.getElementById('mclose').onclick=()=>document.getElementById('moverlay').classList.remove('show');
+document.getElementById('moverlay').onclick=e=>{if(e.target.id==='moverlay')document.getElementById('moverlay').classList.remove('show');};
+document.getElementById('rcancel').onclick=clearRoute;
+</script>
+</body>
+</html>`;
+}
+
+export default function MapScreen({ navigation }) {
+  const { token } = useAuth();
+  const webRef    = useRef(null);
+  const [loading, setLoading] = useState(true);
+  const [html, setHtml]       = useState(null);
 
   useEffect(() => {
-    if (arrived && activeRoute) {
-      setArrivalModal({ emoji: activeRoute.emoji, label: activeRoute.label });
-      logActivity({ type: 'arrival', label: 'You have arrived!', sub: `Destination: ${activeRoute.emoji} ${activeRoute.label}` });
-    }
-  }, [arrived]);
+    (async () => {
+      await Location.requestForegroundPermissionsAsync();
+      const apiBase = resolveApiUrl('').replace(/\/api\/?$/, '/api');
+      setHtml(buildMapHTML(apiBase, token));
+    })();
+  }, [token]);
 
+  // Watch location and inject into WebView
   useEffect(() => {
     let sub;
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') { Alert.alert('Location needed', 'Enable location to get directions.'); return; }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const loc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-      setUserLocation(loc);
-      mapRef.current?.animateToRegion({ ...loc, latitudeDelta: 0.015, longitudeDelta: 0.015 }, 800);
-      sub = await Location.watchPositionAsync({ accuracy: Location.Accuracy.High, distanceInterval: 10 },
-        ({ coords }) => setUserLocation({ latitude: coords.latitude, longitude: coords.longitude }));
+      if (status !== 'granted') return;
+      sub = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.High, distanceInterval: 5 },
+        ({ coords }) => {
+          const msg = JSON.stringify({ type: 'location', lat: coords.latitude, lng: coords.longitude });
+          webRef.current?.injectJavaScript(`
+            (function(){
+              var e = new MessageEvent('message', { data: '${msg.replace(/'/g, "\\'")}' });
+              document.dispatchEvent(e);
+            })();
+            true;
+          `);
+        }
+      );
     })();
     return () => sub?.remove();
   }, []);
-
-  const handleDestinationPress = async (destId, destLat, destLng, cfg) => {
-    if (!userLocation) { Alert.alert('No location', 'Waiting for GPS…'); return; }
-    if (selectedDestId === destId) { setActiveRoute(null); setSelectedDestId(null); return; }
-    setSelectedDestId(destId); setRouteLoading(true);
-    try {
-      const result = await getRoadRoute(userLocation.latitude, userLocation.longitude, destLat, destLng, token);
-      if (result.isFallback) Alert.alert('Road routing unavailable', 'Showing straight-line direction.', [{ text: 'OK' }]);
-      setActiveRoute({ ...result, destId, color: cfg.color, label: cfg.label, emoji: cfg.emoji });
-      setColorSegments(colorizeRoute(result.path, ROAD_CONDITIONS, cfg.color));
-      startNavigation(result.path, cfg.label);
-      if (result.path.length >= 2) {
-        const lats = result.path.map(p => p.latitude), lngs = result.path.map(p => p.longitude);
-        const pad = 0.005;
-        mapRef.current?.animateToRegion({
-          latitude: (Math.min(...lats) + Math.max(...lats)) / 2,
-          longitude: (Math.min(...lngs) + Math.max(...lngs)) / 2,
-          latitudeDelta: Math.max(Math.max(...lats) - Math.min(...lats) + pad, 0.01),
-          longitudeDelta: Math.max(Math.max(...lngs) - Math.min(...lngs) + pad, 0.01),
-        }, 600);
-      }
-    } finally { setRouteLoading(false); }
-  };
-
-  const clearRoute = () => { setActiveRoute(null); setColorSegments([]); setSelectedDestId(null); setArrivalModal(null); stopVoice(); };
-  const zoom = (dir) => {
-    const r = regionRef.current, factor = dir === 'in' ? 0.5 : 2;
-    const next = { ...r, latitudeDelta: r.latitudeDelta * factor, longitudeDelta: r.longitudeDelta * factor };
-    regionRef.current = next; mapRef.current?.animateToRegion(next, 250);
-  };
-  const toggle = (key) => setActive(prev => ({ ...prev, [key]: !prev[key] }));
-  const formatDist = (m) => m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
-  const showGuidance = () => Alert.alert(
-    '🚨 Earthquake Safety',
-    '• Tap any marker (🟢 open space, 🏠 evac center, ⛽ gas, etc.) to get road directions from your location\n\n' +
-    '• Prioritize GREEN open spaces during aftershocks\n\n' +
-    '• Follow the colored route line — 🟢 green = safe roads, 🟡 orange = average, 🔴 red = critical\n\n' +
-    '• Tap the same marker again to clear the route',
-    [{ text: 'Got it' }]
-  );
 
   return (
     <AppLayout navigation={navigation}>
       <StatusBar barStyle="light-content" backgroundColor="#1B2A4A" />
       <View style={styles.container}>
-        <MapView ref={mapRef} style={styles.map} provider={PROVIDER_DEFAULT}
-          initialRegion={SAN_VICENTE_REGION} mapType="standard"
-          customMapStyle={theme.dark ? DARK_MAP_STYLE : []}
-          onRegionChange={r => { regionRef.current = r; }}>
-
-          {POLYGON_LAYERS.map(cfg => {
-            if (!active[cfg.key]) return null;
-            const isRoad = ['safe','average','poor','critical'].includes(cfg.key);
-            const cfgToUse = activeRoute && isRoad ? { ...cfg, stroke: cfg.stroke + '44' } : cfg;
-            return cfg.data.features.map((f, i) => renderPolygonFeature(f, cfgToUse, i));
-          })}
-
-          {POINT_LAYERS.map(cfg => active[cfg.key]
-            ? cfg.data.features.map((f, i) => <PointMarker key={`${cfg.key}-${i}`} feature={f} cfg={cfg} idx={i} onPress={handleDestinationPress} selectedDestId={selectedDestId} />)
-            : null)}
-
-          {userLocation && (<>
-            <Circle center={userLocation} radius={25} fillColor="rgba(59,79,224,0.2)" strokeColor="#3B4FE0" strokeWidth={2} />
-            <Marker coordinate={userLocation} anchor={{ x: 0.5, y: 0.5 }} zIndex={999}>
-              <View style={styles.userDot} />
-            </Marker>
-          </>)}
-
-          {colorSegments.map((seg, i) => <Polyline key={`route-${i}`} coordinates={seg.coords} strokeColor={seg.color} strokeWidth={6} zIndex={998} />)}
-        </MapView>
-
-        {voiceActive && voiceInstruction ? (
-          <View style={styles.voiceBanner}>
-            <Text style={styles.voiceBannerIcon}>🔊</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.voiceBannerText}>{voiceInstruction}</Text>
-              {activeRoute?.label ? (
-                <Text style={styles.voiceBannerDest} numberOfLines={1}>{activeRoute.emoji} {activeRoute.label}</Text>
-              ) : null}
-              {voiceDistRemaining > 0 && <Text style={styles.voiceBannerDist}>{voiceDistRemaining >= 1000 ? `${(voiceDistRemaining/1000).toFixed(1)} km remaining` : `${Math.round(voiceDistRemaining)} m remaining`}</Text>}
-            </View>
-            <TouchableOpacity style={styles.voiceCancelBtn} onPress={clearRoute} activeOpacity={0.8}>
-              <Text style={styles.voiceCancelText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
-        {activeRoute && (
-          <View style={[styles.routeCard, { backgroundColor: theme.dark ? 'rgba(13,27,42,0.97)' : 'rgba(255,255,255,0.97)' }]}>
-            <View style={styles.routeCardRow}>
-              <Text style={styles.routeCardEmoji}>{activeRoute.emoji}</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.routeCardLabel, { color: theme.textPrimary }]}>{activeRoute.label}</Text>
-                <Text style={[styles.routeCardDist, { color: theme.textSecondary }]}>{formatDist(activeRoute.distanceM)}{activeRoute.isFallback ? ' (straight line)' : ' via road'}</Text>
-              </View>
-              <TouchableOpacity style={[styles.routeClearBtn, { backgroundColor: theme.border }]} onPress={clearRoute}>
-                <Text style={[styles.routeClearText, { color: theme.textPrimary }]}>✕</Text>
-              </TouchableOpacity>
-            </View>
+        {!html && (
+          <View style={styles.loader}>
+            <ActivityIndicator size="large" color={colors.btnPrimary} />
+            <Text style={styles.loaderText}>Loading map…</Text>
           </View>
         )}
-
-        {routeLoading && (
-          <View style={[styles.routeLoading, { backgroundColor: theme.dark ? 'rgba(13,27,42,0.97)' : 'rgba(255,255,255,0.97)' }]}>
-            <ActivityIndicator color={colors.btnPrimary} />
-            <Text style={[styles.routeLoadingText, { color: theme.textPrimary }]}>Getting route…</Text>
+        {html && (
+          <WebView
+            ref={webRef}
+            source={{ html, baseUrl: '' }}
+            style={styles.webview}
+            onMessage={(e) => {
+              try {
+                const msg = JSON.parse(e.nativeEvent.data);
+                if (msg.type === 'arrived') {
+                  logActivity({
+                    type:  'arrival',
+                    label: 'You have arrived!',
+                    sub:   `Destination: ${msg.emoji} ${msg.label}`,
+                  });
+                }
+              } catch {}
+            }}
+            onLoadEnd={async () => {
+              setLoading(false);
+              // Send current location immediately on load
+              try {
+                const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                const msg = JSON.stringify({ type: 'location', lat: pos.coords.latitude, lng: pos.coords.longitude });
+                webRef.current?.injectJavaScript(`
+                  (function(){
+                    var e = new MessageEvent('message', { data: '${msg.replace(/'/g, "\\'")}' });
+                    document.dispatchEvent(e);
+                  })();
+                  true;
+                `);
+              } catch {}
+            }}
+            javaScriptEnabled
+            domStorageEnabled
+            geolocationEnabled
+            allowsInlineMediaPlayback
+            mixedContentMode="always"
+            originWhitelist={['*']}
+          />
+        )}
+        {html && loading && (
+          <View style={styles.loader}>
+            <ActivityIndicator size="large" color={colors.btnPrimary} />
           </View>
         )}
-
-        <TouchableOpacity style={styles.guidanceBtn} onPress={showGuidance} activeOpacity={0.85}>
-          <Text style={styles.guidanceEmoji}>🚨</Text>
-        </TouchableOpacity>
-
-        <View style={styles.zoomControls}>
-          <TouchableOpacity style={[styles.zoomBtn, { backgroundColor: theme.dark ? 'rgba(27,42,74,0.95)' : 'rgba(255,255,255,0.96)' }]} onPress={() => zoom('in')} activeOpacity={0.8}>
-            <Text style={[styles.zoomText, { color: theme.textPrimary }]}>+</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.zoomBtn, { backgroundColor: theme.dark ? 'rgba(27,42,74,0.95)' : 'rgba(255,255,255,0.96)' }]} onPress={() => zoom('out')} activeOpacity={0.8}>
-            <Text style={[styles.zoomText, { color: theme.textPrimary }]}>−</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={[styles.panel, { backgroundColor: theme.dark ? 'rgba(13,27,42,0.97)' : 'rgba(255,255,255,0.97)' }]}>
-          <Text style={[styles.panelTitle, { color: theme.textPrimary }]}>Layers</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-            {ALL_LAYERS.map(cfg => {
-              const on = active[cfg.key], dotColor = cfg.stroke || cfg.color;
-              return (
-                <TouchableOpacity key={cfg.key}
-                  style={[styles.chip, { borderColor: theme.border, backgroundColor: theme.card }, on && { backgroundColor: dotColor, borderColor: dotColor }]}
-                  onPress={() => toggle(cfg.key)} activeOpacity={0.8}>
-                  {'emoji' in cfg ? <Text style={styles.chipEmoji}>{cfg.emoji}</Text> : <View style={[styles.chipDot, { backgroundColor: on ? colors.white : dotColor }]} />}
-                  <Text style={[styles.chipText, { color: theme.textSecondary }, on && styles.chipTextOn]}>{cfg.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
       </View>
-
-      <Modal visible={Boolean(arrivalModal)} transparent animationType="fade" onRequestClose={() => { setArrivalModal(null); clearRoute(); }}>
-        <View style={styles.arrivalOverlay}>
-          <View style={[styles.arrivalCard, { backgroundColor: theme.card }]}>
-            <View style={styles.arrivalIconRing}><Text style={styles.arrivalCheckmark}>✓</Text></View>
-            <Text style={[styles.arrivalTitle, { color: theme.textPrimary }]}>You have arrived!</Text>
-            <Text style={styles.arrivalEmoji}>{arrivalModal?.emoji}</Text>
-            <Text style={styles.arrivalDest}>{arrivalModal?.label}</Text>
-            <Text style={[styles.arrivalSub, { color: theme.textSecondary }]}>You have successfully reached your destination.{'\n'}Stay safe and be aware of your surroundings.</Text>
-            <TouchableOpacity style={styles.arrivalBtn} onPress={() => { setArrivalModal(null); clearRoute(); }} activeOpacity={0.85}>
-              <Text style={styles.arrivalBtnText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </AppLayout>
   );
 }
 
-export default function MapScreen({ navigation }) {
-  return <MapErrorBoundary><MapScreenInner navigation={navigation} /></MapErrorBoundary>;
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  map: { flex: 1 },
-  userDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: '#3B4FE0', borderWidth: 3, borderColor: '#fff', elevation: 6 },
-
-  voiceBanner: { position: 'absolute', top: 16, left: 14, right: 70, backgroundColor: '#1B2A4A', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10, elevation: 8 },
-  voiceBannerIcon: { fontSize: 22 },
-  voiceBannerText: { ...typography.h4, color: colors.white, lineHeight: 20 },
-  voiceBannerDest: { ...typography.bodySmall, color: 'rgba(255,255,255,0.85)', marginTop: 1, fontWeight: '600' },
-  voiceBannerDist: { ...typography.bodySmall, color: 'rgba(255,255,255,0.55)', marginTop: 2 },
-  voiceCancelBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
-  voiceCancelText: { color: colors.white, fontSize: 14, fontWeight: '700' },
-
-  routeCard: { position: 'absolute', top: 16, left: 14, right: 70, borderRadius: 14, padding: 12, elevation: 6 },
-  routeCardRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  routeCardEmoji: { fontSize: 24 },
-  routeCardLabel: { ...typography.label },
-  routeCardDist: { ...typography.bodySmall, marginTop: 2 },
-  routeClearBtn: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  routeClearText: { fontSize: 12, fontWeight: '700' },
-
-  routeLoading: { position: 'absolute', top: 16, left: 14, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, elevation: 5 },
-  routeLoadingText: { ...typography.bodySmall },
-
-  zoomControls: { position: 'absolute', right: 14, bottom: 120, gap: 8 },
-  zoomBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', elevation: 4, marginBottom: 8 },
-  zoomText: { fontSize: 24, fontWeight: '700' },
-
-  panel: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingTop: 10, paddingBottom: 12, borderTopLeftRadius: 16, borderTopRightRadius: 16, elevation: 8 },
-  panelTitle: { ...typography.label, paddingHorizontal: 16, marginBottom: 8 },
-  chips: { paddingHorizontal: 12, gap: 8 },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
-  chipDot: { width: 8, height: 8, borderRadius: 4 },
-  chipEmoji: { fontSize: 14 },
-  chipText: { ...typography.bodySmall, fontSize: 12 },
-  chipTextOn: { color: '#fff', fontWeight: '700' },
-
-  arrivalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
-  arrivalCard: { borderRadius: 28, padding: 32, alignItems: 'center', width: '100%', elevation: 12 },
-  arrivalIconRing: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#27AE60', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  arrivalCheckmark: { fontSize: 40, color: '#fff', fontWeight: '700', lineHeight: 48 },
-  arrivalTitle: { ...typography.h1, marginBottom: 12, textAlign: 'center' },
-  arrivalEmoji: { fontSize: 40, marginBottom: 6 },
-  arrivalDest: { ...typography.h3, color: colors.btnPrimary, marginBottom: 12, textAlign: 'center' },
-  arrivalSub: { ...typography.body, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
-  arrivalBtn: { backgroundColor: '#27AE60', borderRadius: 30, paddingVertical: 14, paddingHorizontal: 48 },
-  arrivalBtnText: { ...typography.button, color: '#fff', letterSpacing: 1 },
-
-  guidanceBtn: { position: 'absolute', top: 16, right: 14, width: 48, height: 48, borderRadius: 24, backgroundColor: '#C0392B', alignItems: 'center', justifyContent: 'center', elevation: 6 },
-  guidanceEmoji: { fontSize: 22 },
+  webview:   { flex: 1 },
+  loader: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#0D1B2A',
+  },
+  loaderText: { color: '#fff', marginTop: 12, fontSize: 14 },
 });
